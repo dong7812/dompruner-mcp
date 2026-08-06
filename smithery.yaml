@@ -7,5 +7,5 @@ startCommand:
   commandFunction: |-
     (config) => ({
       command: "npx",
-      args: ["-y", "astrag-mcp"]
+      args: ["-y", "dompruner-mcp"]
     })

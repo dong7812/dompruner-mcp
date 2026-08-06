@@ -1,13 +1,13 @@
-# astrag-mcp
+# dompruner-mcp
 
-![DOM Tree Pruning for AstRAG](assets/banner.png)
+![DOM Tree Pruning for DomPruner](assets/banner.png)
 
 > MCP server that cuts web page token cost by **97–99%** via DOM AST extraction — no API key, no Vector DB, no embedding API required.
 
-AstRAG fetches a URL, parses the DOM as an Abstract Syntax Tree, prunes noise subtrees (nav, ads, scripts, footers) by FQN path, and returns compact Markdown. Every response includes a token stats header so you can see the reduction at a glance.
+DomPruner fetches a URL, parses the DOM as an Abstract Syntax Tree, prunes noise subtrees (nav, ads, scripts, footers) by FQN path, and returns compact Markdown. Every response includes a token stats header so you can see the reduction at a glance.
 
 ```
-> [AstRAG] stripe.com
+> [DomPruner] stripe.com
 > | Raw HTML  | 305,778 tokens |
 > | Refined   |     988 tokens |
 > | Reduction |        99.7%   |
@@ -21,7 +21,7 @@ AstRAG fetches a URL, parses the DOM as an Abstract Syntax Tree, prunes noise su
 No installation, no API key:
 
 ```bash
-npx -y astrag-mcp
+npx -y dompruner-mcp
 ```
 
 ### Claude Code
@@ -31,16 +31,16 @@ Add to `.mcp.json` in your project root (or `~/.claude/.mcp.json` for global):
 ```json
 {
   "mcpServers": {
-    "astrag": {
+    "dompruner": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "astrag-mcp"]
+      "args": ["-y", "dompruner-mcp"]
     }
   }
 }
 ```
 
-Run `/mcp` in Claude Code to verify — you should see `astrag` with `astrag_fetch` and `astrag_analyze` listed.
+Run `/mcp` in Claude Code to verify — you should see `dompruner` with `dompruner_fetch` and `dompruner_analyze` listed.
 
 ### Claude Desktop
 
@@ -49,9 +49,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 ```json
 {
   "mcpServers": {
-    "astrag": {
+    "dompruner": {
       "command": "npx",
-      "args": ["-y", "astrag-mcp"]
+      "args": ["-y", "dompruner-mcp"]
     }
   }
 }
@@ -66,10 +66,10 @@ Add the same `mcpServers` block to your client's MCP config file (`.cursor/mcp.j
 ```json
 {
   "mcpServers": {
-    "astrag": {
+    "dompruner": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "astrag-mcp"]
+      "args": ["-y", "dompruner-mcp"]
     }
   }
 }
@@ -79,7 +79,7 @@ Add the same `mcpServers` block to your client's MCP config file (`.cursor/mcp.j
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BRAVE_API_KEY` | No | Enables `astrag_search` via Brave Search API. Falls back to DuckDuckGo HTML scraping if unset. |
+| `BRAVE_API_KEY` | No | Enables `dompruner_search` via Brave Search API. Falls back to DuckDuckGo HTML scraping if unset. |
 
 No other environment variables are needed.
 
@@ -87,12 +87,12 @@ No other environment variables are needed.
 
 ## Tools
 
-### `astrag_fetch`
+### `dompruner_fetch`
 
 Fetch a URL and return DOM-refined Markdown.
 
 ```
-astrag_fetch(url?, query?)
+dompruner_fetch(url?, query?)
 ```
 
 | Parameter | Type | Required | Description |
@@ -100,12 +100,12 @@ astrag_fetch(url?, query?)
 | `url` | string | No* | Page to fetch and refine |
 | `query` | string | No | Search intent — enables BM25+ section filtering |
 
-*If `url` is omitted and only `query` is provided, AstRAG requests URL resolution from the host LLM via MCP sampling (`createMessage`). If the client does not support sampling, a guide is returned asking the LLM to search first and call `astrag_fetch` again with the resolved URL.
+*If `url` is omitted and only `query` is provided, DomPruner requests URL resolution from the host LLM via MCP sampling (`createMessage`). If the client does not support sampling, a guide is returned asking the LLM to search first and call `dompruner_fetch` again with the resolved URL.
 
 **Response format:**
 
 ```
-> [AstRAG] fastapi.tiangolo.com
+> [DomPruner] fastapi.tiangolo.com
 > |           | Tokens |
 > |-----------|--------|
 > | Raw HTML  | 35,905 |
@@ -119,24 +119,24 @@ The simplest FastAPI file could look like this:
 ...
 ```
 
-### `astrag_analyze`
+### `dompruner_analyze`
 
 Returns a token-reduction report and Semantic Anchor list without the full page content — useful for auditing a page before retrieval.
 
 ```
-astrag_analyze(url)
+dompruner_analyze(url)
 ```
 
 Reports: render type (SSR / SSG / CSR), raw vs refined token counts, reduction %, and the list of headings and meta anchors found.
 
-### `astrag_workflow` prompt
+### `dompruner_workflow` prompt
 
-The server registers an `astrag_workflow` prompt that is delivered to the host LLM on connection. It sets the correct usage pattern:
+The server registers an `dompruner_workflow` prompt that is delivered to the host LLM on connection. It sets the correct usage pattern:
 
-- **URL known** → call `astrag_fetch(url)` directly
-- **URL unknown** → use native web search to resolve the URL, then call `astrag_fetch(url)`
+- **URL known** → call `dompruner_fetch(url)` directly
+- **URL unknown** → use native web search to resolve the URL, then call `dompruner_fetch(url)`
 
-AstRAG handles content refinement; URL discovery is the host LLM's job.
+DomPruner handles content refinement; URL discovery is the host LLM's job.
 
 ---
 
@@ -171,7 +171,7 @@ URL
 
 ### Tiered Fetch
 
-Plain HTTP fails silently on many documentation sites (HTTP 403, UA blocks, JS-gated content). AstRAG runs three tiers before giving up:
+Plain HTTP fails silently on many documentation sites (HTTP 403, UA blocks, JS-gated content). DomPruner runs three tiers before giving up:
 
 | Level | Trigger | Method |
 |-------|---------|--------|
@@ -204,7 +204,7 @@ Tested on 9 real-world sites across 4 categories. All numbers from live fetches.
 
 *Token estimation: Korean ÷ 2, others ÷ 4 chars per token.*
 
-| Site | Category | Raw HTML | Chunk RAG | AstRAG | **AstRAG+BM25** | **Reduction** |
+| Site | Category | Raw HTML | Chunk RAG | DomPruner | **DomPruner+BM25** | **Reduction** |
 |------|----------|:--------:|:---------:|:------:|:---------------:|:-------------:|
 | Stripe API | API Docs | 305,767 | 1,255 | 1,495 | **988** | **99.7%** |
 | Anthropic API | API Docs | 236,773 | 1,255 | 2,255 | **979** | **99.6%** |
@@ -217,11 +217,11 @@ Tested on 9 real-world sites across 4 categories. All numbers from live fetches.
 | Wikipedia AST | General | 44,551 | 1,255 | 2,758 | **1,106** | **97.5%** |
 | **AVERAGE** | | | **1,240** | **2,250** | **883** | **98.6%** |
 
-AstRAG+BM25 delivers **29% fewer tokens than Chunk RAG** on average.
+DomPruner+BM25 delivers **29% fewer tokens than Chunk RAG** on average.
 
 ### vs Chunk RAG
 
-| | Chunk RAG | **AstRAG+BM25** |
+| | Chunk RAG | **DomPruner+BM25** |
 |---|:---:|:---:|
 | Avg output tokens | ~1,240 | **~883 (29% less)** |
 | Token reduction vs raw HTML | ~99% | **~99%** |
@@ -276,7 +276,7 @@ npm run build  # tsc → dist/
 To test a tool call locally:
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"astrag_fetch","arguments":{"url":"https://fastapi.tiangolo.com","query":"routing"}}}' \
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dompruner_fetch","arguments":{"url":"https://fastapi.tiangolo.com","query":"routing"}}}' \
   | npm run dev 2>/dev/null
 ```
 
@@ -285,7 +285,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"astrag_fet
 ## Roadmap
 
 - [#1](https://github.com/dong7812/AST-RAG-MCP/issues/1) — PDF & Office file extraction via Content-Type routing
-- [#2](https://github.com/dong7812/AST-RAG-MCP/issues/2) — BFS site crawl via `astrag_crawl` MCP tool + sitemap.xml support
+- [#2](https://github.com/dong7812/AST-RAG-MCP/issues/2) — BFS site crawl via `dompruner_crawl` MCP tool + sitemap.xml support
 - [#3](https://github.com/dong7812/AST-RAG-MCP/issues/3) — Image content extraction (local OCR / opt-in VLM captioning)
 - [#4](https://github.com/dong7812/AST-RAG-MCP/issues/4) — Structured JSON output mode (deterministic HTML extraction + opt-in LLM schema)
 

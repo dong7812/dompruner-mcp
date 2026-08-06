@@ -1,4 +1,4 @@
-# Contributing to astrag-mcp
+# Contributing to dompruner-mcp
 
 ## Development setup
 
@@ -25,7 +25,7 @@ npm run build
 Send a raw MCP JSON-RPC message to the server via stdin:
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"astrag_fetch","arguments":{"url":"https://fastapi.tiangolo.com","query":"routing"}}}' \
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dompruner_fetch","arguments":{"url":"https://fastapi.tiangolo.com","query":"routing"}}}' \
   | npm run dev 2>/dev/null
 ```
 
