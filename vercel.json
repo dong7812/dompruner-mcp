@@ -1,4 +1,6 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "",
   "functions": {
     "api/mcp.ts": {
       "maxDuration": 30
