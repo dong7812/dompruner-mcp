@@ -1,0 +1,56 @@
+{
+  "name": "astrag-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that reduces web page token cost by 90%+ via DOM AST extraction — no API key required",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "token-reduction",
+    "dom",
+    "ast",
+    "rag",
+    "web-scraping",
+    "llm",
+    "claude",
+    "anthropic"
+  ],
+  "author": "dongggggggg",
+  "license": "MIT",
+  "homepage": "https://github.com/dong7812/astrag-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dong7812/astrag-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dong7812/astrag-mcp/issues"
+  },
+  "type": "module",
+  "main": "dist/mcp-server.js",
+  "bin": {
+    "astrag-mcp": "dist/mcp-server.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/mcp-server.js",
+    "./pipeline": "./dist/pipeline.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/mcp-server.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "parse5": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.5",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
