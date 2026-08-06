@@ -16,13 +16,13 @@
   ],
   "author": "dongggggggg",
   "license": "MIT",
-  "homepage": "https://github.com/dong7812/astrag-mcp#readme",
+  "homepage": "https://github.com/dong7812/AST-RAG-MCP#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dong7812/astrag-mcp.git"
+    "url": "git+https://github.com/dong7812/AST-RAG-MCP.git"
   },
   "bugs": {
-    "url": "https://github.com/dong7812/astrag-mcp/issues"
+    "url": "https://github.com/dong7812/AST-RAG-MCP/issues"
   },
   "type": "module",
   "main": "dist/mcp-server.js",
@@ -54,3 +54,4 @@
     "node": ">=20"
   }
 }
+
