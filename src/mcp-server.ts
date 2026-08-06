@@ -7,10 +7,13 @@ import {
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { createRequire } from 'module';
 import { runPipeline } from './pipeline.js';
 
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+
 const server = new Server(
-  { name: 'dompruner', version: '1.0.0' },
+  { name: 'dompruner', version },
   { capabilities: { tools: {}, prompts: {} } },
 );
 

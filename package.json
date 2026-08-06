@@ -43,13 +43,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-"parse5": "^8.0.1",
-    "zod": "^3.25.76"
+    "parse5": "^8.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.23.5",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "zod": "^3.25.76"
   },
   "engines": {
     "node": ">=20"
