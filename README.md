@@ -1,5 +1,7 @@
 # astrag-mcp
 
+![DOM Tree Pruning for AstRAG](assets/banner.png)
+
 > MCP server that cuts web page token cost by **97–99%** via DOM AST extraction — no API key, no Vector DB, no embedding API required.
 
 AstRAG fetches a URL, parses the DOM as an Abstract Syntax Tree, prunes noise subtrees (nav, ads, scripts, footers) by FQN path, and returns compact Markdown. Every response includes a token stats header so you can see the reduction at a glance.
