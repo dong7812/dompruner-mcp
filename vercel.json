@@ -1,6 +1,11 @@
 {
-  "buildCommand": "npm run build",
   "outputDirectory": "",
+  "rewrites": [
+    {
+      "source": "/.well-known/mcp/server-card.json",
+      "destination": "/api/server-card"
+    }
+  ],
   "functions": {
     "api/mcp.ts": {
       "maxDuration": 30

@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
-import { runPipeline } from '../dist/pipeline.js';
+import { runPipeline } from '../src/pipeline.js';
 
 function createServer() {
   const server = new McpServer({ name: 'dompruner', version: '0.3.0' });
