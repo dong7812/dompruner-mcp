@@ -9,8 +9,11 @@ export function GET(): Response {
   return new Response(
     JSON.stringify({
       name: 'dompruner',
+      displayName: 'DomPruner MCP',
       version: pkg.version,
       description: pkg.description,
+      homepage: 'https://github.com/dong7812/dompruner-mcp',
+      icon: 'https://avatars.githubusercontent.com/dong7812',
       url: 'https://dompruner-mcp.vercel.app/api/mcp',
       tools: [
         {
