@@ -37,6 +37,27 @@ export function GET(): Response {
               },
             },
           },
+          outputSchema: {
+            type: 'object',
+            properties: {
+              markdown: {
+                type: 'string',
+                description: 'DOM-pruned Markdown content.',
+              },
+              stats: {
+                type: 'object',
+                properties: {
+                  hostname: { type: 'string' },
+                  originalTokens: { type: 'number' },
+                  refinedTokens: { type: 'number' },
+                  savedTokens: { type: 'number' },
+                  reductionPercent: { type: 'string' },
+                  fetchMs: { type: 'number' },
+                  parseMs: { type: 'number' },
+                },
+              },
+            },
+          },
           annotations: {
             title: 'Fetch & Prune Web Page',
             readOnlyHint: true,
@@ -59,6 +80,23 @@ export function GET(): Response {
               },
             },
             required: ['url'],
+          },
+          outputSchema: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+              renderType: { type: 'string', description: 'SSR, CSR, or SSG' },
+              originalTokens: { type: 'number' },
+              refinedTokens: { type: 'number' },
+              reductionPercent: { type: 'string' },
+              fetchMs: { type: 'number' },
+              parseMs: { type: 'number' },
+              topAnchors: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Top 5 semantic section headings.',
+              },
+            },
           },
           annotations: {
             title: 'Analyze Token Reduction',
