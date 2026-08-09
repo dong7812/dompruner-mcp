@@ -8,7 +8,7 @@
 
 When Claude uses the built-in WebFetch, a smaller model pre-processes the raw HTML and hands Claude a summarized result — adding latency, cost, and a layer of interpretation you didn't ask for. DomPruner skips that step entirely: it strips DOM noise (nav, ads, scripts, footers) via AST parsing and passes the **original content directly to Claude's context**.
 
-Because no intermediate model touches the page, there is no summarization overhead — just the real text, pruned to its structural core. The result: **97–99% fewer tokens than raw HTML**, no API key, no Vector DB, no embedding required.
+Because no intermediate model touches the page, there is no summarization overhead — just the real text, pruned to its structural core. The result: **94–99% fewer tokens than raw HTML**, no API key, no Vector DB, no embedding required.
 
 ```
 > [DomPruner] stripe.com
@@ -200,43 +200,58 @@ When `query` is provided, the extracted sections are ranked by BM25+ score. Two 
 - **Depth decay (0.4)** — deeply nested sections score lower than top-level content
 - **Ancestor preservation** — parent headings of selected sections are always included for context
 
-Result: only the most relevant sections enter the LLM context, within a configurable token budget.
+Result: only the most relevant sections enter the LLM context, within a 1,200-token budget.
+
+**Zero-score fallback:** if the query terms appear nowhere in the document (BM25 max score = 0), DomPruner automatically returns the full clean content instead of the filtered subset. This is the only threshold-free reliable signal — no arbitrary cutoff, no small model. On semantic queries where vocabulary doesn't directly match the document, the LLM still receives the full noise-reduced content (~3,000 tokens vs ~50,000 raw HTML) and reasons directly. The stats block marks this case:
+
+```
+> [DomPruner] typescriptlang.org  `[BM25: no match → full content]`
+> | Raw HTML            | 47,334 |
+> | DomPruner 정제 후   |    303 |
+> | 절감                | 99.4%  |
+```
 
 ---
 
 ## Benchmark
 
-Tested on 9 real-world sites across 4 categories. All numbers from live fetches.
+Tested on 14 real-world sites across 4 categories. All numbers from live fetches with a representative technical query per page.
 
-*Token estimation: Korean ÷ 2, others ÷ 4 chars per token.*
+*Token estimation: ÷ 4 chars per token. `†` = BM25 no match → full clean content returned.*
 
-| Site | Category | Raw HTML | Chunk RAG | DomPruner | **DomPruner+BM25** | **Reduction** |
-|------|----------|:--------:|:---------:|:------:|:---------------:|:-------------:|
-| Stripe API | API Docs | 305,767 | 1,255 | 1,495 | **988** | **99.7%** |
-| Anthropic API | API Docs | 236,773 | 1,255 | 2,255 | **979** | **99.6%** |
-| GitHub REST | API Docs | 71,434 | 1,255 | 500 | **500** | **99.3%** |
-| TypeScript Handbook | Language | 47,334 | 1,180 | 303 | **303** | **99.4%** |
-| MDN Fetch API | Language | 38,087 | 1,194 | 726 | **726** | **98.1%** |
-| React useState | Framework | 110,966 | 1,255 | 5,491 | **1,158** | **99.0%** |
-| FastAPI | Framework | 38,300 | 1,255 | 3,436 | **1,029** | **97.3%** |
-| Wikipedia REST | General | 44,816 | 1,255 | 3,283 | **1,158** | **97.4%** |
-| Wikipedia AST | General | 44,551 | 1,255 | 2,758 | **1,106** | **97.5%** |
-| **AVERAGE** | | | **1,240** | **2,250** | **883** | **98.6%** |
+| Site | Category | Raw HTML | **DomPruner** | **Reduction** | Mode |
+|------|----------|:--------:|:-------------:|:-------------:|:----:|
+| Stripe API | API Docs | 437,553 | **916** | **99.8%** | BM25 |
+| Anthropic API | API Docs | 240,041 | **1,229** | **99.5%** | BM25 |
+| Python asyncio | Language | 44,316 | **1,328** | **97.0%** | BM25 |
+| Rust Book ch04 | Language | 14,004 | **718** | **94.9%** | BM25 |
+| Go spec | Language | 84,601 | **1,154** | **98.6%** | BM25 |
+| TypeScript Handbook | Language | 47,334 | **303** | **99.4%** | full† |
+| MDN Fetch API | Language | 45,788 | **1,368** | **97.0%** | BM25 |
+| Next.js Routing | Framework | 156,555 | **1,215** | **99.2%** | BM25 |
+| React useState | Framework | 110,966 | **1,324** | **98.8%** | BM25 |
+| FastAPI Body | Framework | 31,662 | **1,229** | **96.1%** | BM25 |
+| Vue Reactivity | Framework | 38,378 | **1,105** | **97.1%** | BM25 |
+| Kubernetes Pods | Framework | 132,892 | **1,709** | **98.7%** | BM25 |
+| Wikipedia (LLM) | General | 268,164 | **679** | **99.7%** | BM25 |
+| Hacker News | General | 8,784 | **923** | **89.5%** | full† |
+| **AVERAGE** | | **118,646** | **1,086** | **97.5%** | |
 
-DomPruner+BM25 delivers **29% fewer tokens than Chunk RAG** on average.
+`†` BM25 zero-score fallback: query terms absent from document → full DomPruner output returned automatically (no model, no threshold).
 
 ### vs Chunk RAG
 
-| | Chunk RAG | **DomPruner+BM25** |
+| | Chunk RAG | **DomPruner** |
 |---|:---:|:---:|
-| Avg output tokens | ~1,240 | **~883 (29% less)** |
-| Token reduction vs raw HTML | ~99% | **~99%** |
+| Avg output tokens | ~1,255 | **~1,086 (13% less)** |
+| Token reduction vs raw HTML | ~99% | **~97.5%** |
 | Heading / structure preservation | Query-dependent | Consistent |
 | Extra infrastructure | Embedding API + Vector DB | **None** |
 | Query required upfront | Yes | No (optional) |
 | Processing overhead | ~100 ms+ (embed API) | **~1 ms** |
 | SSG sites (Next.js / Nuxt) | DOM scrape | **RSC tree walk** |
 | Context breaks at chunk boundaries | Yes | No |
+| Semantic query fallback | Degrades silently | **Full content, auto** |
 
 ---
 

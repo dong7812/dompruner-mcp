@@ -140,10 +140,21 @@ function groupSections(nodes: FQNNode[]): Section[] {
   return sections;
 }
 
+export interface SectionBm25Rule extends AstRAGRule {
+  /**
+   * transform 실행 후 전체 섹션 중 최고 BM25 점수.
+   * 0 = 쿼리 용어가 문서 어디에도 없음 (완전 미스, 유일하게 threshold-free한 신호)
+   * > 0 = 일부 매칭 (절대값 — 문서 간 비교 불가)
+   */
+  getLastConfidence(): number;
+}
+
 export function createSectionBm25Rule(
   query: string,
   options: SectionBm25Options = {},
-): AstRAGRule {
+): SectionBm25Rule {
+  let _lastMaxScore = 0;
+
   const {
     tokenBudget        = 1_200,
     headingBoost       = 2.5,
@@ -157,6 +168,7 @@ export function createSectionBm25Rule(
   return {
     name: 'section-bm25',
     description: `BM25 section ranking (budget: ${tokenBudget} tok, boost: ${headingBoost}×, depth: ${depthDecay})`,
+    getLastConfidence: () => _lastMaxScore,
 
     transform(nodes: FQNNode[], _ctx: RuleContext): FQNNode[] {
       if (!query.trim()) return nodes;
@@ -196,8 +208,9 @@ export function createSectionBm25Rule(
           headingBoost * bm25Score(queryTerms, headingTexts[i], avgHeadLen),
       }));
 
-      // BM25 내림차순 정렬
+      // BM25 내림차순 정렬 + confidence 캡처
       const byScore = [...scored].sort((a, b) => b.score - a.score);
+      _lastMaxScore = byScore[0]?.score ?? 0;
 
       // ── 두 단계 선택 ──────────────────────────────────────────────────────────
       // Phase 1: heading 섹션 우선 확보 (query 관련성 있는 것 중 상위 minHeadingSections)

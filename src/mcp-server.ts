@@ -8,7 +8,7 @@ import {
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createRequire } from 'module';
-import { runPipeline } from './pipeline.js';
+import { runPipeline, type PipelineResult } from './pipeline.js';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
@@ -59,6 +59,26 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     ],
   };
 });
+
+// ── Stats block ───────────────────────────────────────────────────────────────
+
+function buildStatsBlock(r: PipelineResult): string {
+  const hostname = (() => { try { return new URL(r.url).hostname; } catch { return r.url; } })();
+  const saved = r.originalTokens - r.refinedTokens;
+  const pct   = (r.reductionRatio * 100).toFixed(1);
+  // BM25 score 0 = 쿼리 용어 미매칭 → BM25 필터 없이 전체 DomPruner 출력으로 자동 전환
+  const bm25Tag = r.bm25Confidence === 0 ? '  `[BM25: no match → full content]`' : '';
+
+  return [
+    `> **[DomPruner]** \`${hostname}\`${bm25Tag}`,
+    `> | | Tokens |`,
+    `> |---|---|`,
+    `> | Raw HTML | ${r.originalTokens.toLocaleString()} |`,
+    `> | DomPruner 정제 후 | **${r.refinedTokens.toLocaleString()}** |`,
+    `> | 절감 | **${saved.toLocaleString()} (${pct}%)** |`,
+    `> Fetch: ${r.fetchMs.toFixed(0)}ms · Parse: ${r.parseMs.toFixed(1)}ms`,
+  ].join('\n');
+}
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
@@ -168,21 +188,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const r = await runPipeline(resolvedUrl, { query });
-    const saved    = r.originalTokens - r.refinedTokens;
-    const pct      = (r.reductionRatio * 100).toFixed(1);
-    const hostname = (() => { try { return new URL(r.url).hostname; } catch { return r.url; } })();
-
-    const statsBlock = [
-      `> **[DomPruner]** \`${hostname}\``,
-      `> | | Tokens |`,
-      `> |---|---|`,
-      `> | Raw HTML (WebFetch 기준) | ${r.originalTokens.toLocaleString()} |`,
-      `> | DomPruner 정제 후 | **${r.refinedTokens.toLocaleString()}** |`,
-      `> | 절감 | **${saved.toLocaleString()} (${pct}%)** |`,
-      `> Fetch: ${r.fetchMs.toFixed(0)}ms · Parse: ${r.parseMs.toFixed(1)}ms`,
-    ].join('\n');
-
-    return { content: [{ type: 'text', text: statsBlock + '\n\n---\n\n' + r.markdown }] };
+    return { content: [{ type: 'text', text: buildStatsBlock(r) + '\n\n---\n\n' + r.markdown }] };
   }
 
   // ── dompruner_analyze ──────────────────────────────────────────────────────────
