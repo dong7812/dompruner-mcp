@@ -1,5 +1,7 @@
 # dompruner-mcp
 
+[한국어](./README.ko.md) | English
+
 ![DOM Tree Pruning for DomPruner](assets/banner.png)
 
 > Claude reads the actual page — no small model in between, no summarization loss.
