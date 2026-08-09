@@ -2,9 +2,11 @@
 
 ![DOM Tree Pruning for DomPruner](assets/banner.png)
 
-> MCP server that cuts web page token cost by **97–99%** via DOM AST extraction — no API key, no Vector DB, no embedding API required.
+> Claude reads the actual page — no small model in between, no summarization loss.
 
-DomPruner fetches a URL, parses the DOM as an Abstract Syntax Tree, prunes noise subtrees (nav, ads, scripts, footers) by FQN path, and returns compact Markdown. Every response includes a token stats header so you can see the reduction at a glance.
+When Claude uses the built-in WebFetch, a smaller model pre-processes the raw HTML and hands Claude a summarized result — adding latency, cost, and a layer of interpretation you didn't ask for. DomPruner skips that step entirely: it strips DOM noise (nav, ads, scripts, footers) via AST parsing and passes the **original content directly to Claude's context**.
+
+Because no intermediate model touches the page, there is no summarization overhead — just the real text, pruned to its structural core. The result: **97–99% fewer tokens than raw HTML**, no API key, no Vector DB, no embedding required.
 
 ```
 > [DomPruner] stripe.com
@@ -13,6 +15,8 @@ DomPruner fetches a URL, parses the DOM as an Abstract Syntax Tree, prunes noise
 > | Reduction |        99.7%   |
 > Fetch: 1,546ms · Parse: 8.2ms
 ```
+
+Best suited for **developer documentation, API references, release notes, and technical specs** — content where the exact wording matters and summarization loses precision.
 
 ---
 
