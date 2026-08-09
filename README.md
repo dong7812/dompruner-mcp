@@ -8,14 +8,16 @@
 
 When Claude uses the built-in WebFetch, a smaller model pre-processes the raw HTML and hands Claude a summarized result — adding latency, cost, and a layer of interpretation you didn't ask for. DomPruner skips that step entirely: it strips DOM noise (nav, ads, scripts, footers) via AST parsing and passes the **original content directly to Claude's context**.
 
-Because no intermediate model touches the page, there is no summarization overhead — just the real text, pruned to its structural core. The result: **94–99% fewer tokens than raw HTML**, no API key, no Vector DB, no embedding required.
+Because no intermediate model touches the page, there is no summarization overhead — just the real text, pruned to its structural core. The result: **93.5% fewer context tokens than WebFetch** on average, no API key, no Vector DB, no embedding required.
 
 ```
-> [DomPruner] stripe.com
-> | Raw HTML  | 305,778 tokens |
-> | Refined   |     988 tokens |
-> | Reduction |        99.7%   |
-> Fetch: 1,546ms · Parse: 8.2ms
+> [DomPruner] docs.python.org
+> | Raw HTML          | 44,316 tokens |
+> | DomPruner 정제 후 |  1,328 tokens |
+> | 절감              |        97.0%  |
+> Fetch: 194ms · Parse: 11.2ms
+
+# WebFetch context: 21,783 tokens → DomPruner: 1,328 tokens (93.9% reduction)
 ```
 
 Best suited for **developer documentation, API references, release notes, and technical specs** — content where the exact wording matters and summarization loses precision.
@@ -215,43 +217,37 @@ Result: only the most relevant sections enter the LLM context, within a 1,200-to
 
 ## Benchmark
 
-Tested on 14 real-world sites across 4 categories. All numbers from live fetches with a representative technical query per page.
+Measured against Claude's built-in **WebFetch** — the tool DomPruner replaces. WebFetch token count = `input_tokens` from a live `web_fetch_20260209` server tool call (what actually lands in the LLM's context window). DomPruner token count = `refined_tokens` after DOM AST extraction.
 
-*Token estimation: ÷ 4 chars per token. `†` = BM25 no match → full clean content returned.*
+`†` = BM25 zero-score fallback: query terms absent → full clean content returned automatically.
 
-| Site | Category | Raw HTML | **DomPruner** | **Reduction** | Mode |
-|------|----------|:--------:|:-------------:|:-------------:|:----:|
-| Stripe API | API Docs | 437,553 | **916** | **99.8%** | BM25 |
-| Anthropic API | API Docs | 240,041 | **1,229** | **99.5%** | BM25 |
-| Python asyncio | Language | 44,316 | **1,328** | **97.0%** | BM25 |
-| Rust Book ch04 | Language | 14,004 | **718** | **94.9%** | BM25 |
-| Go spec | Language | 84,601 | **1,154** | **98.6%** | BM25 |
-| TypeScript Handbook | Language | 47,334 | **303** | **99.4%** | full† |
-| MDN Fetch API | Language | 45,788 | **1,368** | **97.0%** | BM25 |
-| Next.js Routing | Framework | 156,555 | **1,215** | **99.2%** | BM25 |
-| React useState | Framework | 110,966 | **1,324** | **98.8%** | BM25 |
-| FastAPI Body | Framework | 31,662 | **1,229** | **96.1%** | BM25 |
-| Vue Reactivity | Framework | 38,378 | **1,105** | **97.1%** | BM25 |
-| Kubernetes Pods | Framework | 132,892 | **1,709** | **98.7%** | BM25 |
-| Wikipedia (LLM) | General | 268,164 | **679** | **99.7%** | BM25 |
-| Hacker News | General | 8,784 | **923** | **89.5%** | full† |
-| **AVERAGE** | | **118,646** | **1,086** | **97.5%** | |
+| Site | WebFetch (actual) | **DomPruner** | **Reduction** | Mode |
+|------|:-----------------:|:-------------:|:-------------:|:----:|
+| Python asyncio | 21,783 | **1,328** | **93.9%** | BM25 |
+| Rust Book ch04 | 10,083 | **718** | **92.9%** | BM25 |
+| React useState | 12,347 | **1,324** | **89.3%** | BM25 |
+| FastAPI Body | 10,903 | **1,229** | **88.7%** | BM25 |
+| MDN Fetch API | 15,965 | **1,368** | **91.4%** | BM25 |
+| Stripe API | 2,960 | **916** | **69.1%** | BM25 |
+| Next.js Routing | 6,263 | **1,215** | **80.6%** | BM25 |
+| Wikipedia (LLM) | 56,754 | **679** | **98.8%** | BM25 |
+| TypeScript Handbook | 8,729 | **303** | **96.5%** | full† |
+| Vue Reactivity | 11,560 | **1,105** | **90.4%** | BM25 |
+| **AVERAGE** | **15,735** | **1,019** | **93.5%** | |
 
-`†` BM25 zero-score fallback: query terms absent from document → full DomPruner output returned automatically (no model, no threshold).
+DomPruner delivers **93.5% fewer context tokens than WebFetch** on average — preserving the original text structure without a summarization model in between.
 
-### vs Chunk RAG
+### vs WebFetch
 
-| | Chunk RAG | **DomPruner** |
+| | WebFetch (built-in) | **DomPruner** |
 |---|:---:|:---:|
-| Avg output tokens | ~1,255 | **~1,086 (13% less)** |
-| Token reduction vs raw HTML | ~99% | **~97.5%** |
-| Heading / structure preservation | Query-dependent | Consistent |
-| Extra infrastructure | Embedding API + Vector DB | **None** |
-| Query required upfront | Yes | No (optional) |
-| Processing overhead | ~100 ms+ (embed API) | **~1 ms** |
+| Avg context tokens | ~15,735 | **~1,019 (93.5% less)** |
+| Content fidelity | Summarized by small model | **Original text preserved** |
+| Summarization loss | Yes | **None** |
+| Extra API key needed | No | **No** |
+| Latency | Fetch + model inference | **Fetch + parse (~300 ms)** |
 | SSG sites (Next.js / Nuxt) | DOM scrape | **RSC tree walk** |
-| Context breaks at chunk boundaries | Yes | No |
-| Semantic query fallback | Degrades silently | **Full content, auto** |
+| Semantic query fallback | Silent degradation | **Full content, auto** |
 
 ---
 
