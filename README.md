@@ -382,8 +382,8 @@ src/
 ## Development
 
 ```bash
-git clone https://github.com/dong7812/AST-RAG-MCP.git
-cd AST-RAG-MCP
+git clone https://github.com/dong7812/dompruner-mcp.git
+cd dompruner-mcp
 npm install
 npm run dev    # tsx watch — no build step needed
 npm run build  # tsc → dist/
