@@ -25,6 +25,11 @@ export interface PipelineResult {
   totalMs: number;
   appliedRules: string[];
   cached?: boolean;
+  /**
+   * BM25 최고 점수. query 없으면 undefined.
+   * 0 = 쿼리 용어가 문서 어디에도 없음 → 자동으로 전체 DomPruner 출력 반환.
+   */
+  bm25Confidence?: number;
 }
 
 // ── SSG 마크다운 BM25 섹션 필터 ──────────────────────────────────────────────
@@ -106,9 +111,8 @@ export async function runPipeline(
 
   // BM25는 반드시 presentation rule(http-endpoint 등) 앞에 실행해야
   // 문서 원래 순서로 섹션을 그룹화한 뒤, 선택된 섹션에 재배치 rule이 적용된다.
-  const rules = options.query
-    ? [createSectionBm25Rule(options.query), ...baseRules]
-    : baseRules;
+  const bm25Rule = options.query ? createSectionBm25Rule(options.query) : null;
+  const rules = bm25Rule ? [bm25Rule, ...baseRules] : baseRules;
 
   // 캐시 키: URL + query + rule 이름
   const cacheKey = [url, options.query ?? '', ...rules.map(r => r.name)].join('::');
@@ -173,19 +177,28 @@ export async function runPipeline(
     const ctx    = { url, html: fetched.html, renderType: fetched.renderType };
     const rawNodes = extractContent(doc);              // ← Layer 1→2→3
     const nodes  = applyRules(rawNodes, ctx, rules);   // ← Rule 체인 적용
-    const anchors = extractAnchors(nodes, fetched.html);
+
+    // BM25 confidence 캡처 — transform 실행 후에 점수가 확정됨
+    const bm25Confidence = bm25Rule?.getLastConfidence();
+
+    // maxScore === 0: 쿼리 용어가 문서 어디에도 없음 → BM25 필터 없는 전체 DomPruner 출력
+    // threshold 없음 — 0은 유일하게 임의성 없는 "완전 미스" 신호
+    const outputNodes = (bm25Confidence === 0)
+      ? applyRules(rawNodes, ctx, baseRules)
+      : nodes;
+    const anchors = extractAnchors(outputNodes, fetched.html);
 
     // Rule이 custom serializer를 제공하면 우선 사용
     const customSerializer = rules.findLast(r => r.serialize);
     const { markdown, originalTokens, refinedTokens, reductionRatio } =
       customSerializer
         ? (() => {
-            const md = customSerializer.serialize!(nodes, anchors, ctx);
+            const md = customSerializer.serialize!(outputNodes, anchors, ctx);
             const orig = estimateTokens(fetched.html);
             const ref  = estimateTokens(md);
             return { markdown: md, originalTokens: orig, refinedTokens: ref, reductionRatio: 1 - ref / orig };
           })()
-        : serialize(nodes, anchors, fetched.html);
+        : serialize(outputNodes, anchors, fetched.html);
 
     const parseMs = performance.now() - t1;
 
@@ -201,6 +214,7 @@ export async function runPipeline(
       parseMs,
       totalMs: performance.now() - t0,
       appliedRules: rules.map(r => r.name),
+      bm25Confidence,
     };
   }
 
