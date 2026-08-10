@@ -93,6 +93,27 @@ No other environment variables are needed.
 
 ---
 
+## Ensuring Your AI Always Uses DomPruner
+
+DomPruner's tool description already tells clients to prefer `dompruner_fetch` over WebFetch. If your client still falls back to its built-in fetch, add the rule below to its persistent instruction file:
+
+```markdown
+When retrieving a URL, always use dompruner_fetch instead of WebFetch.
+- URL known → dompruner_fetch(url, query?)
+- URL unknown → search for the URL first, then dompruner_fetch(url)
+```
+
+| Client | Instruction file |
+|--------|-----------------|
+| Claude Code | `CLAUDE.md` (project) or `~/.claude/CLAUDE.md` (global) |
+| Cursor | `.cursorrules` |
+| Windsurf | `.windsurfrules` |
+| Cline | `.clinerules` |
+| GitHub Copilot | `.github/copilot-instructions.md` |
+| Continue | `config.json` → `systemMessage` field |
+
+---
+
 ## Tools
 
 ### `dompruner_fetch`

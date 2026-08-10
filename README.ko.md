@@ -93,6 +93,27 @@ Claude Desktop을 재시작하면 툴이 자동으로 나타납니다.
 
 ---
 
+## AI가 항상 DomPruner를 사용하도록 설정하기
+
+DomPruner의 도구 설명은 이미 클라이언트에게 WebFetch 대신 `dompruner_fetch`를 우선 사용하도록 명시합니다. 클라이언트가 여전히 내장 fetch로 돌아가는 경우, 아래 규칙을 해당 클라이언트의 지속 지시 파일에 추가하세요:
+
+```markdown
+URL을 가져올 때는 WebFetch 대신 항상 dompruner_fetch를 사용한다.
+- URL을 알고 있으면 → dompruner_fetch(url, query?)
+- URL을 모르면 → 먼저 검색으로 URL을 찾은 뒤 dompruner_fetch(url)
+```
+
+| 클라이언트 | 지시 파일 |
+|-----------|----------|
+| Claude Code | `CLAUDE.md` (프로젝트) 또는 `~/.claude/CLAUDE.md` (전역) |
+| Cursor | `.cursorrules` |
+| Windsurf | `.windsurfrules` |
+| Cline | `.clinerules` |
+| GitHub Copilot | `.github/copilot-instructions.md` |
+| Continue | `config.json` → `systemMessage` 필드 |
+
+---
+
 ## 도구
 
 ### `dompruner_fetch`
