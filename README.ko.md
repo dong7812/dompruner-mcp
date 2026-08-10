@@ -334,6 +334,22 @@ DomPruner는 품질 1건(정보가 페이지 전체에 분산된 사실 조회)�
 
 ---
 
+## 연구 근거
+
+**웹 페이지 컨텍스트가 LLM 에이전트에게 너무 크다 — 학술적으로 인정된 문제**
+FocusAgent (2025년 10월)는 웹 페이지가 수만 토큰에 달해 컨텍스트를 포화시키고 비용을 높인다는 것을 확인합니다. LLM 기반 retriever로 50%+ 크기를 줄이는 방식을 제안하지만, DomPruner는 결정론적 DOM AST + BM25로 90%+ 감소를 달성합니다 — 중간 모델 없음, 전처리 단계 할루시네이션 없음.
+→ [FocusAgent: Simple Yet Effective Ways of Trimming the Large Context of Web Agents (2025)](https://arxiv.org/abs/2510.03204)
+
+**긴 컨텍스트에서 관련 정보는 체계적으로 누락된다**
+LLM 성능은 입력 위치에 따라 U자형 곡선을 보입니다 — 관련 내용이 긴 컨텍스트 중간에 있을 때 정확도가 30%+ 하락합니다. 토큰을 15K → 1K로 줄이면 이 문제가 구조적으로 사라집니다.
+→ [Lost in the Middle: How Language Models Use Long Contexts — Liu et al., Stanford (2023)](https://arxiv.org/abs/2307.03172)
+
+**BM25는 확장 가능한 가장 강력한 검색 기준선**
+2026년 통제 실험에서 BM25는 1천만 토큰 이상 코퍼스에서 에이전트 검색을 20점 차이로 앞서며, LLM 기반 구성 비용 없이 Pareto 최적을 유지합니다. FocusAgent 논문의 관련 연구에서도 BM25가 DOM 정제 기법으로 직접 인용됩니다.
+→ [BM25 Wins at Scale: A Scaling Study of RAG Paradigms (2026)](https://arxiv.org/abs/2607.26497)
+
+---
+
 ## 아키텍처
 
 ```

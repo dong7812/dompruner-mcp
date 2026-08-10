@@ -334,6 +334,22 @@ DomPruner trades 1 quality point (one factual case where info was spread across 
 
 ---
 
+## Research Backing
+
+**Web page context is too large for LLM agents — a recognized research problem**
+FocusAgent (Oct 2025) confirms that web pages routinely exceed tens of thousands of tokens, saturating context limits and increasing cost. Their LLM-based retriever achieves 50%+ observation size reduction. DomPruner achieves 90%+ reduction via deterministic DOM AST + BM25 — no intermediate model, no hallucination risk in the preprocessing step.
+→ [FocusAgent: Simple Yet Effective Ways of Trimming the Large Context of Web Agents (2025)](https://arxiv.org/abs/2510.03204)
+
+**Relevant information in long contexts is systematically missed**
+LLM performance follows a U-shaped curve over input position: accuracy degrades 30%+ when relevant content is positioned in the middle of a long context. Reducing from ~15K to ~1K tokens structurally eliminates this problem.
+→ [Lost in the Middle: How Language Models Use Long Contexts — Liu et al., Stanford (2023)](https://arxiv.org/abs/2307.03172)
+
+**BM25 is the strongest scalable retrieval default**
+A 2026 controlled scaling study shows BM25 overtaking agentic search at 10M corpus tokens, leading by ~20 points at full scale while remaining Pareto-optimal without LLM-based construction. BM25 is also directly cited in FocusAgent's related work as an established DOM pruning technique.
+→ [BM25 Wins at Scale: A Scaling Study of RAG Paradigms (2026)](https://arxiv.org/abs/2607.26497)
+
+---
+
 ## Architecture
 
 ```
