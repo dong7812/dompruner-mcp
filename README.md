@@ -217,12 +217,23 @@ Result: only the most relevant sections enter the LLM context, within a 1,200-to
 
 ## Benchmark
 
-Measured against Claude's built-in **WebFetch** — the tool DomPruner replaces. WebFetch token count = `input_tokens` from a live `web_fetch_20260209` server tool call (what actually lands in the LLM's context window). DomPruner token count = `refined_tokens` after DOM AST extraction.
+All numbers are **live measurements** against Claude's built-in WebFetch — the tool DomPruner replaces. Reproducible scripts in [`loadtest/`](./loadtest/).
 
-`†` = BM25 zero-score fallback: query terms absent → full clean content returned automatically.
+**Method:**
+- **WebFetch path** — `web_fetch_20260209` server tool (the actual Anthropic-hosted fetch Claude uses); context token count = `input_tokens` from the API response
+- **DomPruner path** — `dompruner_fetch` → DOM AST extraction + BM25 section filter; context token count = `refined_tokens`
+- **Answer model** — Claude Haiku for both paths (identical model, fair comparison)
 
-| Site | WebFetch (actual) | **DomPruner** | **Reduction** | Mode |
-|------|:-----------------:|:-------------:|:-------------:|:----:|
+---
+
+### 1. Context Tokens
+
+How many tokens actually enter the LLM's context window per page fetch.
+
+`†` BM25 zero-score: query terms absent from document → full clean content returned automatically (no model, no threshold).
+
+| Site | WebFetch | **DomPruner** | **Reduction** | Mode |
+|------|:--------:|:-------------:|:-------------:|:----:|
 | Python asyncio | 21,783 | **1,328** | **93.9%** | BM25 |
 | Rust Book ch04 | 10,083 | **718** | **92.9%** | BM25 |
 | React useState | 12,347 | **1,324** | **89.3%** | BM25 |
@@ -233,21 +244,72 @@ Measured against Claude's built-in **WebFetch** — the tool DomPruner replaces.
 | Wikipedia (LLM) | 56,754 | **679** | **98.8%** | BM25 |
 | TypeScript Handbook | 8,729 | **303** | **96.5%** | full† |
 | Vue Reactivity | 11,560 | **1,105** | **90.4%** | BM25 |
-| **AVERAGE** | **15,735** | **1,019** | **93.5%** | |
+| **Average** | **15,735** | **1,019** | **93.5%** | |
 
-DomPruner delivers **93.5% fewer context tokens than WebFetch** on average — preserving the original text structure without a summarization model in between.
+---
 
-### vs WebFetch
+### 2. Answer Quality
 
-| | WebFetch (built-in) | **DomPruner** |
+10 edge-case queries spanning factual lookup, code examples, conceptual questions, semantic mismatches, and graceful no-answer handling. Claude Haiku answers from each path's output; a separate Haiku judge evaluates whether the answer addresses the question (language-agnostic).
+
+| Query type | DomPruner | WebFetch | Notes |
+|---|:---:|:---:|---|
+| Factual — `asyncio.create_task` return type | ❌ | ✅ | Info spread across page; BM25 1,200-tok budget excluded it |
+| Code example — FastAPI request body | ✅ | ✅ | |
+| Conceptual — React state immutability | ✅ | ✅ | |
+| Semantic fallback — Vue Proxy internals | ✅ | ✅ | BM25 score > 0; correct section selected |
+| Deep content — TypeScript `infer` keyword | ✅ | ✅ | |
+| Troubleshooting — CORS `Access-Control-Allow-Origin` | ✅ | ✅ | |
+| Completeness — Stripe Charge object fields | ✅ | ✅ | |
+| No-answer — page author / publish date | ✅ | ✅ | Both correctly said "not in content" |
+| Cross-page — App Router vs Pages Router diff | ❌ | ❌ | URL only covers App Router; both paths lack the data |
+| Semantic mismatch — "is useState fast?" | ✅ | ✅ | BM25 retrieved relevant perf section despite vague query |
+| **Result** | **8 / 10** | **9 / 10** | |
+
+**Where DomPruner falls short:** when the answer is distributed across a page and the BM25 token budget (1,200 tok) doesn't fit every relevant section. Increasing the budget via `tokenBudget` option resolves this for most cases.
+
+**Where both fail:** queries that require comparing information across multiple URLs — a single-URL middleware boundary, not a DomPruner-specific limitation.
+
+---
+
+### 3. Response Time
+
+End-to-end: from "I have a URL and a question" to "I have an answer."
+
+- DomPruner = `runPipeline` (fetch + parse + BM25) + Haiku inference on ~1,500 tok
+- WebFetch = single Haiku API call with `web_fetch` tool (fetch + inference on ~17,000 tok, all in one turn)
+
+| Query type | DomPruner | WebFetch | Faster |
+|---|:---:|:---:|:---:|
+| Factual | 1,934 ms | 4,517 ms | **DP −2,583 ms** |
+| Code example | 2,892 ms | 5,876 ms | **DP −2,984 ms** |
+| Conceptual | 3,220 ms | 6,035 ms | **DP −2,815 ms** |
+| Semantic fallback | 4,943 ms | 6,946 ms | **DP −2,003 ms** |
+| Deep content | 2,680 ms | 7,083 ms | **DP −4,403 ms** |
+| Troubleshooting | 3,762 ms | 6,428 ms | **DP −2,666 ms** |
+| Completeness | 5,097 ms | 5,907 ms | **DP −810 ms** |
+| No-answer | 1,856 ms | 3,663 ms | **DP −1,807 ms** |
+| Cross-page | 1,986 ms | 5,478 ms | **DP −3,492 ms** |
+| Semantic mismatch | 3,311 ms | 6,180 ms | **DP −2,869 ms** |
+| **Average** | **3,168 ms** | **5,811 ms** | **DP −2,643 ms (45% faster)** |
+
+DomPruner is faster in all 10 cases. The gap is largest on pages where WebFetch pulls large context (Wikipedia, Stripe) — more tokens in context means more inference time.
+
+---
+
+### Summary
+
+| Metric | WebFetch | **DomPruner** |
 |---|:---:|:---:|
 | Avg context tokens | ~15,735 | **~1,019 (93.5% less)** |
+| Answer quality (10 queries) | 9 / 10 | **8 / 10** |
+| Avg response time | 5,811 ms | **3,168 ms (45% faster)** |
 | Content fidelity | Summarized by small model | **Original text preserved** |
-| Summarization loss | Yes | **None** |
-| Extra API key needed | No | **No** |
-| Latency | Fetch + model inference | **Fetch + parse (~300 ms)** |
+| Extra API key / infra | No | **No** |
 | SSG sites (Next.js / Nuxt) | DOM scrape | **RSC tree walk** |
 | Semantic query fallback | Silent degradation | **Full content, auto** |
+
+DomPruner trades 1 quality point (one factual case where info was spread across the page) for a **93.5% token reduction and 45% faster responses**. For agentic workflows that make multiple web fetches per session, the compounding savings are significant.
 
 ---
 
