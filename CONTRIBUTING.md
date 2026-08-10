@@ -3,8 +3,8 @@
 ## Development setup
 
 ```bash
-git clone https://github.com/dong7812/AST-RAG-MCP.git
-cd AST-RAG-MCP
+git clone https://github.com/dong7812/dompruner-mcp.git
+cd dompruner-mcp
 npm install
 ```
 
@@ -64,4 +64,4 @@ src/
 
 ## Reporting a bug
 
-Use the [bug report template](https://github.com/dong7812/AST-RAG-MCP/issues/new?template=bug_report.md). Include the URL that triggered the issue and the full response or error output.
+Use the [bug report template](https://github.com/dong7812/dompruner-mcp/issues/new?template=bug_report.md). Include the URL that triggered the issue and the full response or error output.
