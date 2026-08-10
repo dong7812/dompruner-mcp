@@ -83,6 +83,31 @@ Add the same `mcpServers` block to your client's MCP config file (`.cursor/mcp.j
 }
 ```
 
+### LangChain / LangGraph
+
+No separate package needed. [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) wraps any MCP stdio server as LangChain tools automatically:
+
+```bash
+pip install langchain-mcp-adapters
+```
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "dompruner": {
+        "command": "npx",
+        "args": ["-y", "dompruner-mcp"],
+        "transport": "stdio",
+    }
+})
+
+tools = await client.get_tools()
+# dompruner_fetch and dompruner_analyze are now LangChain-compatible tools
+```
+
+The same pattern works for **CrewAI**, **LlamaIndex**, and any other framework with MCP support.
+
 ### Environment Variables
 
 | Variable | Required | Description |

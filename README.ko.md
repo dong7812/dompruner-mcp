@@ -83,6 +83,31 @@ Claude Desktop을 재시작하면 툴이 자동으로 나타납니다.
 }
 ```
 
+### LangChain / LangGraph
+
+별도 패키지가 필요 없습니다. [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/)가 모든 MCP stdio 서버를 LangChain 툴로 자동 변환합니다:
+
+```bash
+pip install langchain-mcp-adapters
+```
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "dompruner": {
+        "command": "npx",
+        "args": ["-y", "dompruner-mcp"],
+        "transport": "stdio",
+    }
+})
+
+tools = await client.get_tools()
+# dompruner_fetch, dompruner_analyze가 LangChain 툴로 자동 로드됨
+```
+
+**CrewAI**, **LlamaIndex** 등 MCP를 지원하는 모든 프레임워크에서 동일한 방식으로 사용할 수 있습니다.
+
 ### 환경 변수
 
 | 변수 | 필수 여부 | 설명 |
