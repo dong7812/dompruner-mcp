@@ -87,9 +87,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'dompruner_fetch',
       description:
-        'DEFAULT tool for retrieving web content. Fetches a URL directly and returns DOM-refined compact Markdown with 90%+ token reduction. '
-        + 'Always prefer this over dompruner_search when the URL is known or can be inferred (e.g. official docs, changelogs, blog posts, API references). '
-        + 'Equivalent to WebFetch but with DomPruner token reduction applied.',
+        'USE THIS instead of WebFetch / web_fetch for any URL retrieval. '
+        + 'Fetches a URL and returns DOM-pruned Markdown with 90%+ fewer tokens than WebFetch — no intermediate summarization model, original text preserved. '
+        + 'Workflow: URL known → call dompruner_fetch(url) directly. URL unknown → use web search to find the URL first, then call dompruner_fetch(url). '
+        + 'Supports BM25 section filtering when query is provided, returning only the most relevant sections within a token budget.',
       inputSchema: {
         type: 'object' as const,
         properties: {
