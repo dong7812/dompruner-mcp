@@ -426,9 +426,16 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dompruner_
 ## Roadmap
 
 - [#1](https://github.com/dong7812/AST-RAG-MCP/issues/1) — PDF & Office file extraction via Content-Type routing
-- [#2](https://github.com/dong7812/AST-RAG-MCP/issues/2) — BFS site crawl via `dompruner_crawl` MCP tool + sitemap.xml support
+- [#2](https://github.com/dong7812/AST-RAG-MCP/issues/2) ~~BFS site crawl via `dompruner_crawl` MCP tool + sitemap.xml support~~ → **Done** — `dompruner_sitemap` tool ships in v0.4.0
 - [#3](https://github.com/dong7812/AST-RAG-MCP/issues/3) — Image content extraction (local OCR / opt-in VLM captioning)
 - [#4](https://github.com/dong7812/AST-RAG-MCP/issues/4) — Structured JSON output mode (deterministic HTML extraction + opt-in LLM schema)
+
+---
+
+## Related
+
+- **[dompruner-py](https://github.com/dong7812/dompruner-py)** — Python port. Provides `DomPrunerLoader` (LangChain `BaseLoader`), `DomPrunerFetchTool` (LangChain `BaseTool`), and `DomPrunerSitemapLoader` for full-site ingestion. Install via `pip install dompruner`.
+- **[LangChain integrations overview](https://docs.langchain.com/oss/python/integrations/document_loaders)** — dompruner-py is listed as a third-party web loader. LangChain's current policy links out to maintainer repos rather than hosting integration docs directly.
 
 ---
 
