@@ -9,6 +9,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { createRequire } from 'module';
 import { runPipeline, type PipelineResult } from './pipeline.js';
+import { collectSitemapUrls } from './ast/sitemap.js';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
@@ -109,6 +110,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'dompruner_sitemap',
+      description:
+        'Fetches all pages listed in a sitemap.xml and returns DOM-pruned Markdown for each. '
+        + 'Ideal for ingesting entire documentation sites into an LLM context with 90%+ token reduction. '
+        + 'Handles sitemap indexes (sitemaps of sitemaps) automatically. '
+        + 'Use filter_urls to limit to a path prefix (e.g. /docs/, /tutorial/).',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          sitemap_url: {
+            type: 'string',
+            description: 'URL of the sitemap.xml (e.g. https://example.com/sitemap.xml)',
+          },
+          query: {
+            type: 'string',
+            description: 'Optional BM25 filter query applied to every page.',
+          },
+          filter_urls: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional list of URL prefixes — only pages matching at least one prefix are included.',
+          },
+          max_pages: {
+            type: 'number',
+            description: 'Max pages to fetch (default 20, max 100). Guards against huge sitemaps.',
+          },
+          concurrency: {
+            type: 'number',
+            description: 'Max simultaneous page fetches (default 8).',
+          },
+        },
+        required: ['sitemap_url'],
+      },
+    },
+    {
       name: 'dompruner_analyze',
       description:
         'Returns a token-reduction analysis report for a URL. Shows render type, original vs refined token counts, and top Semantic Anchors.',
@@ -190,6 +226,104 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const r = await runPipeline(resolvedUrl, { query });
     return { content: [{ type: 'text', text: buildStatsBlock(r) + '\n\n---\n\n' + r.markdown }] };
+  }
+
+  // ── dompruner_sitemap ─────────────────────────────────────────────────────────
+  if (name === 'dompruner_sitemap') {
+    const {
+      sitemap_url,
+      query,
+      filter_urls,
+      max_pages = 20,
+      concurrency = 8,
+    } = args as {
+      sitemap_url: string;
+      query?: string;
+      filter_urls?: string[];
+      max_pages?: number;
+      concurrency?: number;
+    };
+
+    const cappedMax = Math.min(max_pages, 100);
+
+    // 1. Collect URLs from sitemap
+    let allUrls = await collectSitemapUrls(sitemap_url);
+
+    // 2. Apply prefix filter
+    if (filter_urls?.length) {
+      allUrls = allUrls.filter(u => filter_urls.some(prefix => u.startsWith(prefix)));
+    }
+
+    // 3. Cap to max_pages
+    const urls = allUrls.slice(0, cappedMax);
+
+    if (urls.length === 0) {
+      return {
+        content: [{
+          type: 'text',
+          text: `**DomPruner Sitemap**: No URLs found in ${sitemap_url}${filter_urls?.length ? ` matching prefixes [${filter_urls.join(', ')}]` : ''}.`,
+        }],
+      };
+    }
+
+    // 4. Fetch pages concurrently with semaphore
+    type PageResult = { url: string; markdown: string; originalTokens: number; refinedTokens: number } | { url: string; error: string };
+
+    const sem = { count: concurrency, queue: [] as (() => void)[] };
+    async function withSem<T>(fn: () => Promise<T>): Promise<T> {
+      if (sem.count > 0) {
+        sem.count--;
+      } else {
+        await new Promise<void>(res => sem.queue.push(res));
+      }
+      try {
+        return await fn();
+      } finally {
+        const next = sem.queue.shift();
+        if (next) next(); else sem.count++;
+      }
+    }
+
+    const results: PageResult[] = await Promise.all(
+      urls.map(url =>
+        withSem(async () => {
+          try {
+            const r = await runPipeline(url, { query });
+            return { url: r.url, markdown: r.markdown, originalTokens: r.originalTokens, refinedTokens: r.refinedTokens };
+          } catch (e) {
+            return { url, error: String(e) };
+          }
+        }),
+      ),
+    );
+
+    // 5. Build output
+    const succeeded = results.filter((r): r is Extract<PageResult, { markdown: string }> => 'markdown' in r);
+    const failed    = results.filter((r): r is Extract<PageResult, { error: string }>    => 'error' in r);
+
+    const totalOriginal = succeeded.reduce((s, r) => s + r.originalTokens, 0);
+    const totalRefined  = succeeded.reduce((s, r) => s + r.refinedTokens, 0);
+    const saved = totalOriginal - totalRefined;
+    const pct   = totalOriginal ? (saved / totalOriginal * 100).toFixed(1) : '0';
+
+    const statsBlock = [
+      `> **[DomPruner Sitemap]** \`${new URL(sitemap_url).hostname}\``,
+      `> | | |`,
+      `> |---|---|`,
+      `> | Pages fetched | ${succeeded.length} / ${urls.length} |`,
+      `> | Total original tokens | ${totalOriginal.toLocaleString()} |`,
+      `> | Total refined tokens | **${totalRefined.toLocaleString()}** |`,
+      `> | Token reduction | **${saved.toLocaleString()} (${pct}%)** |`,
+      failed.length ? `> | Failed | ${failed.length} pages |` : '',
+    ].filter(Boolean).join('\n');
+
+    const pages = succeeded
+      .map(r => `## ${r.url}\n\n${r.markdown}`)
+      .join('\n\n---\n\n');
+
+    return {
+      content: [{ type: 'text', text: statsBlock + '\n\n---\n\n' + pages }],
+    };
   }
 
   // ── dompruner_analyze ──────────────────────────────────────────────────────────
