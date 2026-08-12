@@ -2,20 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getCacheStats, clearCache } from '../src/pipeline.ts';
 
-// pipeline 내부 캐시에 만료 항목을 직접 주입하기 위해 모듈 내부 접근 대신
-// runPipeline 없이 getCacheStats/clearCache만 테스트한다.
-
-test('getCacheStats returns expired count', () => {
+test('getCacheStats returns l1 and l2 with expired fields', () => {
   clearCache();
   const stats = getCacheStats();
-  assert.equal(stats.total, 0);
-  assert.equal(stats.alive, 0);
-  assert.equal(stats.expired, 0);
-  assert.ok('expired' in stats, 'expired field must exist');
+  assert.ok('l1' in stats && 'l2' in stats, 'must have l1 and l2 tiers');
+  assert.ok('expired' in stats.l1 && 'expired' in stats.l2, 'each tier must have expired');
+  assert.equal(stats.l1.total, 0);
+  assert.equal(stats.l2.total, 0);
 });
 
-test('expired = total - alive', () => {
+test('expired = total - alive (both tiers)', () => {
   clearCache();
   const stats = getCacheStats();
-  assert.equal(stats.expired, stats.total - stats.alive);
+  assert.equal(stats.l1.expired, stats.l1.total - stats.l1.alive);
+  assert.equal(stats.l2.expired, stats.l2.total - stats.l2.alive);
 });
