@@ -88,18 +88,71 @@ function filterSsgByQuery(markdown: string, query: string, budget = 1_200): stri
     .trim();
 }
 
-// ── URL 결과 캐시 (TTL: 5분) ──────────────────────────────────────────────────
-const CACHE_TTL_MS = 5 * 60 * 1_000;
-const resultCache = new Map<string, { result: PipelineResult; expiresAt: number }>();
+// ── 2-tier page-fault cache ───────────────────────────────────────────────────
+//
+// L1 (result): key = url+query+rules  LRU 256  TTL 5min
+//   완전한 PipelineResult 저장. 동일 url+query 재요청 시 pipeline 전체 skip.
+//
+// L2 (fetch):  key = url              LRU 64   TTL 2min
+//   HTTP fetch 결과(HTML+renderType) 저장. 같은 URL 다른 query 시 fetch skip.
+//   per-URL semaphore(limit=1)로 직렬화 — 첫 번째 완료 후 대기자는 L2 hit.
+//   실패 시 semaphore 해제 → 다음 대기자가 독립 재시도 (Promise 공유와의 차이).
+
+const L1_TTL_MS = 5 * 60 * 1_000;
+const L1_MAX    = 256;
+const L2_TTL_MS = 2 * 60 * 1_000;
+const L2_MAX    = 64;
+
+type L1Entry = { result: PipelineResult; expiresAt: number };
+type L2Entry = { fetched: Awaited<ReturnType<typeof fetchPage>>; expiresAt: number };
+
+const l1Cache = new Map<string, L1Entry>();
+const l2Cache = new Map<string, L2Entry>();
+
+function lruSet<V>(cache: Map<string, V>, key: string, value: V, max: number): void {
+  if (cache.has(key)) cache.delete(key);
+  if (cache.size >= max) cache.delete(cache.keys().next().value!);
+  cache.set(key, value);
+}
+
+// per-URL semaphore (limit=1): L2 fetch 구간만 직렬화
+class Semaphore {
+  private slots: number;
+  private queue: Array<() => void> = [];
+  constructor(limit: number) { this.slots = limit; }
+  acquire(): Promise<void> {
+    if (this.slots > 0) { this.slots--; return Promise.resolve(); }
+    return new Promise(resolve => this.queue.push(resolve));
+  }
+  release(): void {
+    const next = this.queue.shift();
+    if (next) next(); else this.slots++;
+  }
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try { return await fn(); } finally { this.release(); }
+  }
+}
+
+const fetchSems = new Map<string, Semaphore>();
+function getFetchSem(url: string): Semaphore {
+  if (!fetchSems.has(url)) fetchSems.set(url, new Semaphore(1));
+  return fetchSems.get(url)!;
+}
 
 export function getCacheStats() {
   const now = Date.now();
-  const alive = [...resultCache.values()].filter(e => e.expiresAt > now).length;
-  return { total: resultCache.size, alive, expired: resultCache.size - alive };
+  const l1Alive = [...l1Cache.values()].filter(e => e.expiresAt > now).length;
+  const l2Alive = [...l2Cache.values()].filter(e => e.expiresAt > now).length;
+  return {
+    l1: { total: l1Cache.size, alive: l1Alive, expired: l1Cache.size - l1Alive },
+    l2: { total: l2Cache.size, alive: l2Alive, expired: l2Cache.size - l2Alive },
+  };
 }
 
 export function clearCache() {
-  resultCache.clear();
+  l1Cache.clear();
+  l2Cache.clear();
 }
 
 export async function runPipeline(
@@ -114,16 +167,25 @@ export async function runPipeline(
   const bm25Rule = options.query ? createSectionBm25Rule(options.query) : null;
   const rules = bm25Rule ? [bm25Rule, ...baseRules] : baseRules;
 
-  // 캐시 키: URL + query + rule 이름
-  const cacheKey = [url, options.query ?? '', ...rules.map(r => r.name)].join('::');
-  const cached = resultCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return { ...cached.result, cached: true, fetchMs: 0, parseMs: 0, totalMs: 0 };
+  // ── L1 check ─────────────────────────────────────────────────────────────────
+  const l1Key = [url, options.query ?? '', ...rules.map(r => r.name)].join('::');
+  const l1Hit = l1Cache.get(l1Key);
+  if (l1Hit && l1Hit.expiresAt > Date.now()) {
+    return { ...l1Hit.result, cached: true, fetchMs: 0, parseMs: 0, totalMs: 0 };
   }
 
   const t0 = performance.now();
 
-  const fetched = await fetchPage(url);
+  // ── L2 check + fetch (per-URL semaphore) ─────────────────────────────────────
+  const fetched = await getFetchSem(url).run(async () => {
+    // sem 획득 후 double-check: 대기 중 다른 요청이 L2를 채웠을 수 있음
+    const l2Hit = l2Cache.get(url);
+    if (l2Hit && l2Hit.expiresAt > Date.now()) return l2Hit.fetched;
+
+    const result = await fetchPage(url);
+    lruSet(l2Cache, url, { fetched: result, expiresAt: Date.now() + L2_TTL_MS }, L2_MAX);
+    return result;
+  });
   const fetchMs = performance.now() - t0;
 
   const t1 = performance.now();
@@ -218,8 +280,8 @@ export async function runPipeline(
     };
   }
 
-  // 캐시 저장
-  resultCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+  // ── L1 저장 ──────────────────────────────────────────────────────────────────
+  lruSet(l1Cache, l1Key, { result, expiresAt: Date.now() + L1_TTL_MS }, L1_MAX);
 
   return result;
 }

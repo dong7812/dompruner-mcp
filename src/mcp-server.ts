@@ -140,6 +140,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'number',
             description: 'Max simultaneous page fetches (default 8).',
           },
+          ignore_errors: {
+            type: 'boolean',
+            description: 'If true (default), failed page fetches are skipped silently. If false, any fetch error aborts the entire sitemap crawl.',
+          },
         },
         required: ['sitemap_url'],
       },
@@ -236,12 +240,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       filter_urls,
       max_pages = 20,
       concurrency = 8,
+      ignore_errors = true,
     } = args as {
       sitemap_url: string;
       query?: string;
       filter_urls?: string[];
       max_pages?: number;
       concurrency?: number;
+      ignore_errors?: boolean;
     };
 
     const cappedMax = Math.min(max_pages, 100);
@@ -291,6 +297,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const r = await runPipeline(url, { query });
             return { url: r.url, markdown: r.markdown, originalTokens: r.originalTokens, refinedTokens: r.refinedTokens };
           } catch (e) {
+            if (!ignore_errors) throw e;
             return { url, error: String(e) };
           }
         }),
