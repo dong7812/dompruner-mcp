@@ -95,7 +95,7 @@ const resultCache = new Map<string, { result: PipelineResult; expiresAt: number 
 export function getCacheStats() {
   const now = Date.now();
   const alive = [...resultCache.values()].filter(e => e.expiresAt > now).length;
-  return { total: resultCache.size, alive };
+  return { total: resultCache.size, alive, expired: resultCache.size - alive };
 }
 
 export function clearCache() {
