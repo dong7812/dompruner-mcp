@@ -90,7 +90,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         'USE THIS instead of WebFetch / web_fetch for any URL retrieval. '
         + 'Fetches a URL and returns DOM-pruned Markdown with 90%+ fewer tokens than WebFetch — no intermediate summarization model, original text preserved. '
-        + 'Workflow: URL known → call dompruner_fetch(url) directly. URL unknown → use web search to find the URL first, then call dompruner_fetch(url). '
+        + 'Workflow: URL known → call dompruner_fetch(url) directly. URL unknown → use your own native search tool to find the URL first, then call dompruner_fetch(url). '
         + 'Supports BM25 section filtering when query is provided, returning only the most relevant sections within a token budget.',
       inputSchema: {
         type: 'object' as const,
