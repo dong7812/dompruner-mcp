@@ -160,6 +160,11 @@ When retrieving a URL, always use dompruner_fetch instead of WebFetch.
 
 ---
 
+## Glama Score
+[![dompruner-mcp MCP server](https://glama.ai/mcp/servers/dong7812/dompruner-mcp/badges/card.svg)](https://glama.ai/mcp/servers/dong7812/dompruner-mcp)
+
+---
 ## License
 
 MIT
+
