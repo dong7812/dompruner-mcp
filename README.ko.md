@@ -74,6 +74,20 @@ npx -y dompruner-mcp
 }
 ```
 
+### Remote HTTP (설치 불필요, 항상 최신)
+
+HTTP transport를 지원하는 클라이언트라면 Node.js 설치 없이 바로 사용 가능하며, 배포 시마다 자동으로 최신 버전이 적용됩니다:
+
+```json
+{
+  "mcpServers": {
+    "dompruner": {
+      "url": "https://dompruner-mcp.vercel.app/api/mcp"
+    }
+  }
+}
+```
+
 ### LangChain / LangGraph
 
 [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/)로 MCP stdio 서버를 LangChain 툴로 자동 변환:

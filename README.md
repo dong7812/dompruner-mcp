@@ -74,6 +74,20 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
+### Remote HTTP (no install, always up to date)
+
+For clients that support HTTP transport — no Node.js install required, always runs the latest version:
+
+```json
+{
+  "mcpServers": {
+    "dompruner": {
+      "url": "https://dompruner-mcp.vercel.app/api/mcp"
+    }
+  }
+}
+```
+
 ### LangChain / LangGraph
 
 [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) wraps any MCP stdio server as LangChain tools automatically:
