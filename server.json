@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dong7812/dompruner-mcp",
+  "title": "dompruner-mcp",
+  "description": "Strips layout noise via DOM AST; with a query, BM25 filters to relevant sections. No model or API.",
+  "version": "0.5.2",
+  "repository": {
+    "url": "https://github.com/dong7812/dompruner-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/dong7812/dompruner-mcp",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "dompruner-mcp",
+      "version": "0.5.2",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://dompruner-mcp.vercel.app/api/mcp"
+    }
+  ]
+}

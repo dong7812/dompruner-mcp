@@ -1,6 +1,7 @@
 {
   "name": "dompruner-mcp",
-  "version": "0.5.1",
+  "version": "0.5.2",
+  "mcpName": "io.github.dong7812/dompruner-mcp",
   "description": "MCP server that reduces web page token cost by 90%+ via DOM AST extraction — no API key required",
   "keywords": [
     "mcp",
