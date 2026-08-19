@@ -4,9 +4,14 @@
 
 ![DOM Tree Pruning for DomPruner](assets/banner.png)
 
-> DOM AST middleware for LLM web pipelines — strips nav/ads/scripts via AST parsing, passes original content token-efficient to any LLM.
+> DOM AST middleware for LLM web pipelines — strips layout noise (nav, scripts, sidebars) and passes original text directly. Add a query to filter to relevant sections with BM25.
 
 When an LLM uses the built-in WebFetch, a smaller model pre-processes the HTML and hands back a summarized result — adding latency, cost, and interpretation you didn't ask for. DomPruner skips that entirely: DOM AST parsing strips noise and passes the **original content directly to the model**.
+
+| Call | Behavior |
+|---|---|
+| `dompruner_fetch(url)` | Strips layout noise → returns full extracted content |
+| `dompruner_fetch(url, query)` | Strips layout noise → BM25 filters to relevant sections (falls back to full content if no match) |
 
 ```
 > [DomPruner] docs.python.org

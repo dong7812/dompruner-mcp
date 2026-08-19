@@ -4,9 +4,14 @@ English | [한국어](./README.ko.md)
 
 ![DOM Tree Pruning for DomPruner](assets/banner.png)
 
-> LLM 웹 파이프라인을 위한 DOM AST 미들웨어 — AST 파싱으로 nav/광고/스크립트를 제거하고, 원본 콘텐츠를 토큰 효율적으로 모든 LLM에 전달합니다.
+> LLM 웹 파이프라인을 위한 DOM AST 미들웨어 — 레이아웃 노이즈(nav·스크립트·사이드바)를 제거하고 원문을 그대로 전달합니다. query를 넘기면 BM25로 관련 섹션만 추가 필터링합니다.
 
 LLM이 내장 WebFetch를 사용하면 소형 모델이 HTML을 전처리해 요약된 결과를 반환합니다 — 지연, 비용, 원하지 않은 해석이 추가됩니다. DomPruner는 이 단계를 건너뜁니다: DOM AST 파싱으로 노이즈를 제거하고 **원문 콘텐츠를 모델에 직접 전달**합니다.
+
+| 호출 | 동작 |
+|---|---|
+| `dompruner_fetch(url)` | 레이아웃 노이즈 제거 → 전체 추출 콘텐츠 반환 |
+| `dompruner_fetch(url, query)` | 레이아웃 노이즈 제거 → BM25로 관련 섹션만 (매칭 없으면 전체 반환) |
 
 ```
 > [DomPruner] docs.python.org
