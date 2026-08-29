@@ -77,7 +77,7 @@ jobs:
           }
 
           api_key = os.environ['GEMINI_API_KEY']
-          url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}'
+          url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}'
           req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode(),
@@ -92,7 +92,7 @@ jobs:
             print(f'Gemini API HTTP {e.code}: {e.reason}', file=sys.stderr)
             print(f'Response body: {body}', file=sys.stderr)
             # Try fallback model
-            fallback = 'gemini-1.5-flash'
+            fallback = 'gemini-3.5-flash'
             print(f'Retrying with {fallback}...', file=sys.stderr)
             url2 = f'https://generativelanguage.googleapis.com/v1beta/models/{fallback}:generateContent?key={api_key}'
             req2 = urllib.request.Request(url2, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
@@ -147,7 +147,7 @@ jobs:
             echo "<!-- gemini-verdict: $VERDICT -->"
             echo ""
             echo "---"
-            echo "*Reviewed by Gemini 2.0 Flash*"
+            echo "*Reviewed by Gemini 3.6 Flash*"
           } > /tmp/comment.md
 
           gh pr comment "$PR_NUM" --body-file /tmp/comment.md
