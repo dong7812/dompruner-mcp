@@ -93,8 +93,9 @@ jobs:
           }
 
           api_key = os.environ['GEMINI_API_KEY']
-          models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
+          models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.0-flash-exp']
 
+          import time
           data = None
           for model in models:
             url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
@@ -103,16 +104,27 @@ jobs:
               data=json.dumps(payload).encode(),
               headers={'Content-Type': 'application/json'},
             )
-            try:
-              with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read())
-                print(f'Using model: {model}')
+            for attempt in range(3):
+              try:
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                  data = json.loads(resp.read())
+                  print(f'Using model: {model} (attempt {attempt+1})')
+                  break
+              except urllib.error.HTTPError as e:
+                body = e.read().decode()
+                code = e.code
+                print(f'{model} attempt {attempt+1} failed ({code}): {body[:200]}', file=sys.stderr)
+                if code == 503 and attempt < 2:
+                  wait = 15 * (attempt + 1)
+                  print(f'  Retrying in {wait}s...', file=sys.stderr)
+                  time.sleep(wait)
+                else:
+                  break
+              except Exception as e:
+                print(f'{model} error: {e}', file=sys.stderr)
                 break
-            except urllib.error.HTTPError as e:
-              body = e.read().decode()
-              print(f'{model} failed ({e.code}): {body[:200]}', file=sys.stderr)
-            except Exception as e:
-              print(f'{model} error: {e}', file=sys.stderr)
+            if data:
+              break
 
           if data is None:
             print('All models failed.', file=sys.stderr)
