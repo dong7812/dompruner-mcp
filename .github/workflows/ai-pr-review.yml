@@ -25,93 +25,123 @@ jobs:
       - name: Resolve PR number
         id: pr
         run: |
-          NUM="${{ github.event.pull_request.number || inputs.pr_number }}"
+          NUM="${{ github.event.pull_request.number }}"
+          if [ -z "$NUM" ]; then
+            NUM="${{ inputs.pr_number }}"
+          fi
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
 
       - name: Fetch PR diff
-        run: |
-          gh pr diff "${{ steps.pr.outputs.number }}" > /tmp/pr_diff.txt
+        run: gh pr diff "${{ steps.pr.outputs.number }}" > /tmp/pr_diff.txt
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Run Gemini review
         id: review
         run: |
-          DIFF=$(head -c 12000 /tmp/pr_diff.txt)
+          python3 << 'PYEOF'
+          import os, json, urllib.request, sys
 
-          AGENTS_MD=""
-          if [ -f "AGENTS.md" ]; then
-            AGENTS_MD=$(cat AGENTS.md)
-          fi
+          diff = open('/tmp/pr_diff.txt').read()[:12000]
+          agents_md = open('AGENTS.md').read() if os.path.exists('AGENTS.md') else ''
 
-          PAYLOAD=$(jq -n \
-            --arg diff "$DIFF" \
-            --arg agents "$AGENTS_MD" \
-            '{
-              contents: [{
-                parts: [{
-                  text: ("You are a code reviewer. Review the following PR diff.\n\nReview standards:\n" + (if $agents == "" then "- Check correctness, security, and code quality" else $agents end) + "\n\nPR Diff:\n```diff\n" + $diff + "\n```\n\nRespond in this EXACT format:\n\n## Summary\n(what changed in 2-3 sentences)\n\n## Issues\n(use: 🔴 Critical | 🟡 Suggestion | ✅ No issues)\n\n## Verdict\nAPPROVE\n\n---\nReplace the last line with either APPROVE or REQUEST_CHANGES based on whether there are any 🔴 critical issues.\nIf there are only 🟡 suggestions or ✅, verdict must be APPROVE.\nIf there is any 🔴 critical issue, verdict must be REQUEST_CHANGES.")
-                }]
-              }],
-              generationConfig: {
-                maxOutputTokens: 1500,
-                temperature: 0.2
-              }
-            }')
+          standards = agents_md if agents_md else '- Check correctness, security issues, and code quality'
 
-          RESPONSE=$(curl -sf \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=$GEMINI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD")
+          prompt = '\n'.join([
+            'You are a code reviewer. Review the following PR diff.',
+            '',
+            'Review standards:',
+            standards,
+            '',
+            'PR Diff:',
+            diff,
+            '',
+            'Respond in this EXACT format (keep section headers exactly as shown):',
+            '',
+            '## Summary',
+            '(2-3 sentences describing what changed)',
+            '',
+            '## Issues',
+            '(list issues using: flag_red Critical | flag_yellow Suggestion | flag_green No issues)',
+            '',
+            '## Verdict',
+            'APPROVE',
+            '',
+            'IMPORTANT: The last line of ## Verdict must be exactly APPROVE or REQUEST_CHANGES.',
+            'Use REQUEST_CHANGES only if there is a Critical issue. Otherwise use APPROVE.',
+          ])
 
-          REVIEW=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text')
+          payload = {
+            'contents': [{'parts': [{'text': prompt}]}],
+            'generationConfig': {'maxOutputTokens': 1500, 'temperature': 0.2},
+          }
 
-          if [ -z "$REVIEW" ]; then
-            echo "Gemini API error" >&2
-            echo "$RESPONSE" >&2
-            exit 1
-          fi
+          api_key = os.environ['GEMINI_API_KEY']
+          url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={api_key}'
+          req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json'},
+          )
 
-          echo "$REVIEW" > /tmp/review.txt
+          try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+              data = json.loads(resp.read())
+          except Exception as e:
+            print(f'Gemini API error: {e}', file=sys.stderr)
+            sys.exit(1)
 
-          # Parse verdict from last ## Verdict section
-          if echo "$REVIEW" | grep -qE "^APPROVE$"; then
-            echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
-          else
-            echo "verdict=REQUEST_CHANGES" >> "$GITHUB_OUTPUT"
-          fi
+          review = data['candidates'][0]['content']['parts'][0]['text']
+          open('/tmp/review.txt', 'w').write(review)
+
+          # Parse verdict
+          verdict = 'REQUEST_CHANGES'
+          for line in reversed(review.splitlines()):
+            line = line.strip()
+            if line == 'APPROVE':
+              verdict = 'APPROVE'
+              break
+            if line == 'REQUEST_CHANGES':
+              break
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f'verdict={verdict}\n')
+
+          print(f'Verdict: {verdict}')
+          PYEOF
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Post review comment
         run: |
-          REVIEW=$(cat /tmp/review.txt)
-          PR_NUM="${{ steps.pr.outputs.number }}"
           VERDICT="${{ steps.review.outputs.verdict }}"
+          PR_NUM="${{ steps.pr.outputs.number }}"
 
-          VERDICT_BADGE=""
           if [ "$VERDICT" = "APPROVE" ]; then
-            VERDICT_BADGE="![Approved](https://img.shields.io/badge/Gemini-APPROVED-brightgreen)"
+            BADGE="![APPROVED](https://img.shields.io/badge/Gemini-APPROVED-brightgreen)"
           else
-            VERDICT_BADGE="![Changes Requested](https://img.shields.io/badge/Gemini-REQUEST__CHANGES-red)"
+            BADGE="![REQUEST CHANGES](https://img.shields.io/badge/Gemini-REQUEST__CHANGES-red)"
           fi
 
-          gh pr comment "$PR_NUM" --body "## 🤖 Gemini Code Review — $VERDICT_BADGE
+          {
+            echo "## Gemini Code Review — $BADGE"
+            echo ""
+            cat /tmp/review.txt
+            echo ""
+            echo "<!-- gemini-verdict: $VERDICT -->"
+            echo ""
+            echo "---"
+            echo "*Reviewed by Gemini 2.5 Flash Lite*"
+          } > /tmp/comment.md
 
-$REVIEW
-
-<!-- gemini-verdict: $VERDICT -->
-
----
-<sub>Reviewed by Gemini 2.5 Flash Lite</sub>"
+          gh pr comment "$PR_NUM" --body-file /tmp/comment.md
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Auto-merge if approved
         if: steps.review.outputs.verdict == 'APPROVE'
         run: |
-          PR_NUM="${{ steps.pr.outputs.number }}"
-          echo "✅ Gemini approved — merging PR #$PR_NUM"
-          gh pr merge "$PR_NUM" --squash --delete-branch
+          echo "Gemini approved — merging PR #${{ steps.pr.outputs.number }}"
+          gh pr merge "${{ steps.pr.outputs.number }}" --squash --delete-branch
         env:
           GH_TOKEN: ${{ github.token }}
