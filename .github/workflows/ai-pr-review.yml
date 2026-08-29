@@ -87,6 +87,22 @@ jobs:
           try:
             with urllib.request.urlopen(req, timeout=60) as resp:
               data = json.loads(resp.read())
+          except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            print(f'Gemini API HTTP {e.code}: {e.reason}', file=sys.stderr)
+            print(f'Response body: {body}', file=sys.stderr)
+            # Try fallback model
+            fallback = 'gemini-1.5-flash'
+            print(f'Retrying with {fallback}...', file=sys.stderr)
+            url2 = f'https://generativelanguage.googleapis.com/v1beta/models/{fallback}:generateContent?key={api_key}'
+            req2 = urllib.request.Request(url2, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
+            try:
+              with urllib.request.urlopen(req2, timeout=60) as resp2:
+                data = json.loads(resp2.read())
+            except urllib.error.HTTPError as e2:
+              body2 = e2.read().decode()
+              print(f'Fallback also failed: {e2.code} {body2}', file=sys.stderr)
+              sys.exit(1)
           except Exception as e:
             print(f'Gemini API error: {e}', file=sys.stderr)
             sys.exit(1)
