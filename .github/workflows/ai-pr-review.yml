@@ -171,3 +171,96 @@ jobs:
           gh pr merge "${{ steps.pr.outputs.number }}" --squash --delete-branch
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Log to Google Sheets
+        if: always()
+        run: |
+          python3 << 'PYEOF'
+          import os, json, urllib.request, datetime
+
+          sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+          sa_json = os.environ.get('GOOGLE_SA_JSON', '')
+          if not sheet_id or not sa_json:
+            print('GOOGLE_SHEET_ID or GOOGLE_SA_JSON not set — skipping log')
+            exit(0)
+          sa = json.loads(sa_json)
+
+          # JWT 생성 (서비스 계정 인증)
+          import base64, time, hashlib
+          from urllib.parse import urlencode
+
+          def b64url(data):
+            if isinstance(data, str): data = data.encode()
+            return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+          header = b64url(json.dumps({'alg': 'RS256', 'typ': 'JWT'}))
+          now = int(time.time())
+          claim = b64url(json.dumps({
+            'iss': sa['client_email'],
+            'scope': 'https://www.googleapis.com/auth/spreadsheets',
+            'aud': 'https://oauth2.googleapis.com/token',
+            'exp': now + 3600,
+            'iat': now,
+          }))
+
+          import subprocess, tempfile, os as _os
+          key_pem = sa['private_key'].encode()
+          msg = f'{header}.{claim}'.encode()
+          with tempfile.NamedTemporaryFile(delete=False, suffix='.pem') as f:
+            f.write(key_pem); key_path = f.name
+          with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(msg); msg_path = f.name
+          sig_bytes = subprocess.check_output(['openssl', 'dgst', '-sha256', '-sign', key_path, msg_path])
+          _os.unlink(key_path); _os.unlink(msg_path)
+          sig = b64url(sig_bytes)
+          jwt = f'{header}.{claim}.{sig}'
+
+          # Access token 발급
+          token_resp = urllib.request.urlopen(
+            urllib.request.Request(
+              'https://oauth2.googleapis.com/token',
+              data=urlencode({'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion': jwt}).encode(),
+              headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+          )
+          access_token = json.loads(token_resp.read())['access_token']
+
+          # 로그 데이터
+          review = open('/tmp/review.txt').read() if _os.path.exists('/tmp/review.txt') else ''
+          summary = ''
+          issues_count = 0
+          for line in review.splitlines():
+            if line.startswith('## 요약') or line.startswith('## Summary'):
+              continue
+            if summary == '' and line.strip() and not line.startswith('#'):
+              summary = line.strip()[:200]
+            if '🔴' in line or '🟡' in line:
+              issues_count += 1
+
+          row = [
+            datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
+            os.environ.get('GITHUB_REPOSITORY', ''),
+            os.environ.get('PR_NUMBER', ''),
+            os.environ.get('PR_TITLE', ''),
+            os.environ.get('VERDICT', ''),
+            summary,
+            str(issues_count),
+            f"https://github.com/{os.environ.get('GITHUB_REPOSITORY','')}/pull/{os.environ.get('PR_NUMBER','')}",
+          ]
+
+          # Sheets API 행 추가
+          url = f'https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A1:append?valueInputOption=USER_ENTERED'
+          body = json.dumps({'values': [row]}).encode()
+          req = urllib.request.Request(url, data=body, headers={
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+          })
+          urllib.request.urlopen(req)
+          print(f'Logged to Google Sheets: {row[0]} | {row[4]}')
+          PYEOF
+        env:
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          VERDICT: ${{ steps.review.outputs.verdict }}
