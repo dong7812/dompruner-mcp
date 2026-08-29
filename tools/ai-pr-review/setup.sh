@@ -4,10 +4,11 @@
 #
 # What this does:
 #   1. Registers GEMINI_API_KEY as a GitHub Secret
-#   2. Uploads GitHub Actions workflow (Gemini review + auto-merge)
-#   3. Uploads cowork.sh (Claude Code monitoring loop)
-#   4. Creates AGENTS.md (review standards)
-#   5. Injects PR workflow rules into CLAUDE.md
+#   2. Registers GOOGLE_SA_JSON + GOOGLE_SHEET_ID (optional, for review log)
+#   3. Uploads GitHub Actions workflow (Gemini review + auto-merge + Sheets log)
+#   4. Uploads cowork.sh (Claude Code monitoring loop)
+#   5. Creates AGENTS.md (review standards)
+#   6. Injects PR workflow rules into CLAUDE.md
 #
 # After setup, just say "PR 올려줘" to Claude Code — it handles everything.
 
@@ -30,6 +31,26 @@ if [ -z "${GEMINI_API_KEY:-}" ]; then
   echo
 fi
 [ -n "$GEMINI_API_KEY" ] || { echo "Error: GEMINI_API_KEY is required." >&2; exit 1; }
+
+# ── Google Sheets 로그 (선택) ─────────────────────────────────────────────────
+
+echo
+echo "Google Sheets 리뷰 로그 설정 (선택 사항)"
+echo "  건너뛰려면 Enter를 누르세요."
+echo
+
+if [ -z "${GOOGLE_SA_JSON:-}" ]; then
+  echo -n "Google Service Account JSON 파일 경로 (없으면 Enter): "
+  read -r SA_JSON_PATH
+  if [ -n "$SA_JSON_PATH" ] && [ -f "$SA_JSON_PATH" ]; then
+    GOOGLE_SA_JSON=$(cat "$SA_JSON_PATH")
+  fi
+fi
+
+if [ -z "${GOOGLE_SHEET_ID:-}" ] && [ -n "${GOOGLE_SA_JSON:-}" ]; then
+  echo -n "Google Sheet ID (URL의 /d/ 뒤 문자열): "
+  read -r GOOGLE_SHEET_ID
+fi
 
 echo "Setting up AI PR Review for: $REPO"
 echo
@@ -63,34 +84,43 @@ upload_file() {
   fi
 }
 
-# ── 1. GitHub Secret ──────────────────────────────────────────────────────────
+# ── 1. GitHub Secrets ─────────────────────────────────────────────────────────
 
-echo "→ [1/5] Registering GEMINI_API_KEY secret..."
+echo "→ [1/6] Registering secrets..."
 gh secret set GEMINI_API_KEY --repo "$REPO" --body "$GEMINI_API_KEY"
-echo "   Done."
+echo "   GEMINI_API_KEY registered."
+
+if [ -n "${GOOGLE_SA_JSON:-}" ]; then
+  gh secret set GOOGLE_SA_JSON --repo "$REPO" --body "$GOOGLE_SA_JSON"
+  echo "   GOOGLE_SA_JSON registered."
+fi
+
+if [ -n "${GOOGLE_SHEET_ID:-}" ]; then
+  gh secret set GOOGLE_SHEET_ID --repo "$REPO" --body "$GOOGLE_SHEET_ID"
+  echo "   GOOGLE_SHEET_ID registered."
+fi
+
+if [ -z "${GOOGLE_SA_JSON:-}" ]; then
+  echo "   Google Sheets 로그 건너뜀 (선택 사항)."
+fi
 
 # ── 2. GitHub Actions workflow ────────────────────────────────────────────────
 
-echo "→ [2/5] Uploading GitHub Actions workflow..."
+echo "→ [2/6] Uploading GitHub Actions workflow..."
 upload_file ".github/workflows/ai-pr-review.yml" \
   "$SCRIPT_DIR/workflow.yml" \
-  "ci: add AI PR review workflow (Gemini + auto-merge)"
+  "ci: add AI PR review workflow (Gemini + auto-merge + Sheets log)"
 
 # ── 3. cowork.sh ──────────────────────────────────────────────────────────────
 
-echo "→ [3/5] Uploading cowork.sh..."
+echo "→ [3/6] Uploading cowork.sh..."
 upload_file ".github/scripts/cowork.sh" \
   "$SCRIPT_DIR/cowork.sh" \
   "ci: add Claude×Gemini co-work monitoring script"
 
-# Make it executable via a commit (GitHub doesn't set mode via API, so we patch it)
-gh api --method PATCH "repos/$REPO/contents/.github/scripts/cowork.sh" \
-  --field executable=true \
-  --silent 2>/dev/null || true
-
 # ── 4. AGENTS.md ─────────────────────────────────────────────────────────────
 
-echo "→ [4/5] Checking AGENTS.md..."
+echo "→ [4/6] Checking AGENTS.md..."
 if gh api "repos/$REPO/contents/AGENTS.md" --silent 2>/dev/null; then
   echo "   Already exists — skipping."
 else
@@ -101,37 +131,43 @@ fi
 
 # ── 5. CLAUDE.md — inject PR workflow rules ───────────────────────────────────
 
-echo "→ [5/5] Updating CLAUDE.md with PR workflow rules..."
+echo "→ [5/6] Updating CLAUDE.md with PR workflow rules..."
 
 SNIPPET=$(cat "$SCRIPT_DIR/CLAUDE.md.snippet")
 MARKER="## PR 워크플로우 — Claude × Gemini 자동 리뷰"
 
-# Fetch existing CLAUDE.md if present
 EXISTING_SHA=$(gh api "repos/$REPO/contents/CLAUDE.md" --jq '.sha' 2>/dev/null || true)
 EXISTING_CONTENT=""
 if [ -n "$EXISTING_SHA" ]; then
   EXISTING_CONTENT=$(gh api "repos/$REPO/contents/CLAUDE.md" --jq '.content' | base64 -d)
 fi
 
-# Only inject if the marker is not already there
 if echo "$EXISTING_CONTENT" | grep -qF "$MARKER"; then
   echo "   Already injected — skipping."
 else
   NEW_CONTENT="${EXISTING_CONTENT}
 
 ${SNIPPET}"
-
   printf '%s' "$NEW_CONTENT" > /tmp/_claude_md_tmp.md
   upload_file "CLAUDE.md" \
     /tmp/_claude_md_tmp.md \
     "docs: inject Claude×Gemini PR workflow rules into CLAUDE.md"
+  rm -f /tmp/_claude_md_tmp.md
 fi
+
+# ── 6. Repo settings: allow auto-merge ───────────────────────────────────────
+
+echo "→ [6/6] Enabling auto-merge on repo..."
+gh api --method PATCH "repos/$REPO" \
+  --field allow_auto_merge=true \
+  --silent 2>/dev/null && echo "   auto-merge enabled." || echo "   (auto-merge 설정 권한 없음 — 수동으로 Settings → Allow auto-merge 활성화)"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo
 echo "✅ Setup complete for $REPO"
 echo
-echo "Usage:"
-echo "  Open this repo in Claude Code and say \"PR 올려줘\""
-echo "  Claude Code will write code → open PR → co-work with Gemini → auto-merge"
+if [ -n "${GOOGLE_SHEET_ID:-}" ]; then
+  echo "  PR 리뷰 로그: https://docs.google.com/spreadsheets/d/$GOOGLE_SHEET_ID"
+fi
+echo "  Claude Code에서 \"PR 올려줘\" 라고 하면 자동으로 진행됩니다."
