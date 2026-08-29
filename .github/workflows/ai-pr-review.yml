@@ -174,16 +174,23 @@ jobs:
 
       - name: Log to Google Sheets
         if: always()
+        continue-on-error: true
         run: |
           python3 << 'PYEOF'
           import os, json, urllib.request, datetime
 
           sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
-          sa_json = os.environ.get('GOOGLE_SA_JSON', '')
+          sa_json = os.environ.get('GOOGLE_SA_JSON', '').strip()
           if not sheet_id or not sa_json:
             print('GOOGLE_SHEET_ID or GOOGLE_SA_JSON not set — skipping log')
             exit(0)
-          sa = json.loads(sa_json)
+          try:
+            sa = json.loads(sa_json)
+          except json.JSONDecodeError as e:
+            print(f'SA JSON parse error: {e}')
+            print(f'  First 50 chars: {repr(sa_json[:50])}')
+            print('  Hint: Secret이 올바른 JSON인지 확인하세요 (GitHub Settings → Secrets → GOOGLE_SA_JSON)')
+            exit(1)
 
           # JWT 생성 (서비스 계정 인증)
           import base64, time, hashlib
