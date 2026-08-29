@@ -31,8 +31,18 @@ jobs:
           fi
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch PR diff
-        run: gh pr diff "${{ steps.pr.outputs.number }}" > /tmp/pr_diff.txt
+      - name: Fetch PR diff (source files only)
+        run: |
+          # 설정/문서 파일 제외 — Gemini가 소스 코드만 리뷰하도록
+          gh pr diff "${{ steps.pr.outputs.number }}" \
+            -- ':!*.yml' ':!*.yaml' ':!*.md' ':!*.lock' \
+               ':!*.json' ':!*.toml' ':!*.txt' ':!*.env*' \
+            > /tmp/pr_diff.txt || true
+
+          # 소스 파일이 없으면 전체 diff로 폴백
+          if [ ! -s /tmp/pr_diff.txt ]; then
+            gh pr diff "${{ steps.pr.outputs.number }}" > /tmp/pr_diff.txt
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -42,33 +52,33 @@ jobs:
           python3 << 'PYEOF'
           import os, json, urllib.request, sys
 
-          diff = open('/tmp/pr_diff.txt').read()[:12000]
+          diff = open('/tmp/pr_diff.txt').read()[:20000]
           agents_md = open('AGENTS.md').read() if os.path.exists('AGENTS.md') else ''
 
-          standards = agents_md if agents_md else '- Check correctness, security issues, and code quality'
+          standards = agents_md if agents_md else '- 정확성, 보안 취약점, 코드 품질 확인'
 
           prompt = '\n'.join([
-            'You are a code reviewer. Review the following PR diff.',
+            '당신은 시니어 소프트웨어 엔지니어입니다. 아래 PR diff를 한국어로 코드 리뷰해 주세요.',
             '',
-            'Review standards:',
+            '리뷰 기준:',
             standards,
             '',
             'PR Diff:',
             diff,
             '',
-            'Respond in this EXACT format (keep section headers exactly as shown):',
+            '아래 형식을 정확히 지켜서 한국어로 답변하세요:',
             '',
-            '## Summary',
-            '(2-3 sentences describing what changed)',
+            '## 요약',
+            '(변경 사항을 2-3문장으로 설명)',
             '',
-            '## Issues',
-            '(list issues using: flag_red Critical | flag_yellow Suggestion | flag_green No issues)',
+            '## 이슈',
+            '(🔴 치명적 | 🟡 제안 | ✅ 이슈 없음 형식으로 작성)',
             '',
-            '## Verdict',
+            '## 판정',
             'APPROVE',
             '',
-            'IMPORTANT: The last line of ## Verdict must be exactly APPROVE or REQUEST_CHANGES.',
-            'Use REQUEST_CHANGES only if there is a Critical issue. Otherwise use APPROVE.',
+            '중요: ## 판정 섹션의 마지막 줄은 반드시 APPROVE 또는 REQUEST_CHANGES 중 하나여야 합니다.',
+            '🔴 치명적 이슈가 있으면 REQUEST_CHANGES, 없으면 APPROVE를 사용하세요.',
           ])
 
           payload = {
@@ -77,40 +87,34 @@ jobs:
           }
 
           api_key = os.environ['GEMINI_API_KEY']
-          url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}'
-          req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode(),
-            headers={'Content-Type': 'application/json'},
-          )
+          models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
 
-          try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-              data = json.loads(resp.read())
-          except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print(f'Gemini API HTTP {e.code}: {e.reason}', file=sys.stderr)
-            print(f'Response body: {body}', file=sys.stderr)
-            # Try fallback model
-            fallback = 'gemini-3.5-flash'
-            print(f'Retrying with {fallback}...', file=sys.stderr)
-            url2 = f'https://generativelanguage.googleapis.com/v1beta/models/{fallback}:generateContent?key={api_key}'
-            req2 = urllib.request.Request(url2, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
+          data = None
+          for model in models:
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+            req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode(),
+              headers={'Content-Type': 'application/json'},
+            )
             try:
-              with urllib.request.urlopen(req2, timeout=60) as resp2:
-                data = json.loads(resp2.read())
-            except urllib.error.HTTPError as e2:
-              body2 = e2.read().decode()
-              print(f'Fallback also failed: {e2.code} {body2}', file=sys.stderr)
-              sys.exit(1)
-          except Exception as e:
-            print(f'Gemini API error: {e}', file=sys.stderr)
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read())
+                print(f'Using model: {model}')
+                break
+            except urllib.error.HTTPError as e:
+              body = e.read().decode()
+              print(f'{model} failed ({e.code}): {body[:200]}', file=sys.stderr)
+            except Exception as e:
+              print(f'{model} error: {e}', file=sys.stderr)
+
+          if data is None:
+            print('All models failed.', file=sys.stderr)
             sys.exit(1)
 
           review = data['candidates'][0]['content']['parts'][0]['text']
           open('/tmp/review.txt', 'w').write(review)
 
-          # Parse verdict
           verdict = 'REQUEST_CHANGES'
           for line in reversed(review.splitlines()):
             line = line.strip()
@@ -134,20 +138,20 @@ jobs:
           PR_NUM="${{ steps.pr.outputs.number }}"
 
           if [ "$VERDICT" = "APPROVE" ]; then
-            BADGE="![APPROVED](https://img.shields.io/badge/Gemini-APPROVED-brightgreen)"
+            BADGE="![승인됨](https://img.shields.io/badge/Gemini-승인됨-brightgreen)"
           else
-            BADGE="![REQUEST CHANGES](https://img.shields.io/badge/Gemini-REQUEST__CHANGES-red)"
+            BADGE="![수정 요청](https://img.shields.io/badge/Gemini-수정_요청-red)"
           fi
 
           {
-            echo "## Gemini Code Review — $BADGE"
+            echo "## 🤖 Gemini 코드 리뷰 — $BADGE"
             echo ""
             cat /tmp/review.txt
             echo ""
             echo "<!-- gemini-verdict: $VERDICT -->"
             echo ""
             echo "---"
-            echo "*Reviewed by Gemini 3.6 Flash*"
+            echo "*Gemini AI 자동 리뷰*"
           } > /tmp/comment.md
 
           gh pr comment "$PR_NUM" --body-file /tmp/comment.md
@@ -157,7 +161,7 @@ jobs:
       - name: Auto-merge if approved
         if: steps.review.outputs.verdict == 'APPROVE'
         run: |
-          echo "Gemini approved — merging PR #${{ steps.pr.outputs.number }}"
+          echo "Gemini 승인 — PR #${{ steps.pr.outputs.number }} 자동 merge"
           gh pr merge "${{ steps.pr.outputs.number }}" --squash --delete-branch
         env:
           GH_TOKEN: ${{ github.token }}
