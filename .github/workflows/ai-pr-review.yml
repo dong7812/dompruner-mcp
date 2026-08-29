@@ -60,7 +60,7 @@ jobs:
           prompt = '\n'.join([
             '# 역할',
             '당신은 시니어 소프트웨어 엔지니어입니다.',
-            '반드시 한국어로만 답변하세요. 영어를 사용하지 마세요.',
+            '한국어로 답변하세요. 기술 용어(함수명, 변수명, 에러명 등)는 영어 그대로 사용해도 됩니다.',
             '',
             '# 리뷰 기준',
             standards,
@@ -89,7 +89,7 @@ jobs:
 
           payload = {
             'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {'maxOutputTokens': 2500, 'temperature': 0.1},
+            'generationConfig': {'maxOutputTokens': 4000, 'temperature': 0.1},
           }
 
           api_key = os.environ['GEMINI_API_KEY']
