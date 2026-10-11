@@ -75,8 +75,8 @@ function buildStatsBlock(r: PipelineResult): string {
     `> | | Tokens |`,
     `> |---|---|`,
     `> | Raw HTML | ${r.originalTokens.toLocaleString()} |`,
-    `> | DomPruner 정제 후 | **${r.refinedTokens.toLocaleString()}** |`,
-    `> | 절감 | **${saved.toLocaleString()} (${pct}%)** |`,
+    `> | Refined | **${r.refinedTokens.toLocaleString()}** |`,
+    `> | Saved | **${saved.toLocaleString()} (${pct}%)** |`,
     `> Fetch: ${r.fetchMs.toFixed(0)}ms · Parse: ${r.parseMs.toFixed(1)}ms`,
   ].join('\n');
 }
@@ -210,13 +210,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: [
-                `**DomPruner**: URL이 필요합니다.`,
+                `**DomPruner**: A URL is required.`,
                 ``,
-                `"${query}"에 대해 다음 단계로 진행해 주세요:`,
-                `1. 네이티브 웹 검색으로 가장 관련성 높은 공식 URL을 찾습니다.`,
-                `2. 찾은 URL로 \`dompruner_fetch(url)\`을 다시 호출합니다.`,
+                `To look up "${query}":`,
+                `1. Use your native web search to find the most relevant official URL.`,
+                `2. Call \`dompruner_fetch(url)\` with that URL.`,
                 ``,
-                `DomPruner는 URL → 정제를 담당하고, URL 탐색은 현재 환경의 검색 기능을 활용합니다.`,
+                `DomPruner handles content refinement. URL discovery is handled by your environment's search.`,
               ].join('\n'),
             },
           ],
