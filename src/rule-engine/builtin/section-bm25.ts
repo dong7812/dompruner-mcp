@@ -154,17 +154,18 @@ function groupSections(nodes: FQNNode[]): Section[] {
 export interface SectionBm25Rule extends AstRAGRule {
   /**
    * transform 실행 후 전체 섹션 중 최고 BM25 점수.
-   * 0 = 쿼리 용어가 문서 어디에도 없음 (완전 미스, 유일하게 threshold-free한 신호)
-   * > 0 = 일부 매칭 (절대값 — 문서 간 비교 불가)
+   * undefined = BM25 미실행 (섹션 수 부족, budget 초과 없음 등 early return)
+   * 0         = BM25 실행됐으나 쿼리 용어가 문서 어디에도 없음 (완전 미스)
+   * > 0       = 일부 매칭 (절대값 — 문서 간 비교 불가)
    */
-  getLastConfidence(): number;
+  getLastConfidence(): number | undefined;
 }
 
 export function createSectionBm25Rule(
   query: string,
   options: SectionBm25Options = {},
 ): SectionBm25Rule {
-  let _lastMaxScore = 0;
+  let _lastMaxScore: number | undefined = undefined;
 
   const {
     tokenBudget        = 1_200,

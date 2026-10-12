@@ -26,8 +26,10 @@ export interface PipelineResult {
   appliedRules: string[];
   cached?: boolean;
   /**
-   * BM25 최고 점수. query 없으면 undefined.
-   * 0 = 쿼리 용어가 문서 어디에도 없음 → 자동으로 전체 DomPruner 출력 반환.
+   * BM25 최고 점수.
+   * undefined = query 없음 또는 BM25 미실행 (섹션 수 부족 등 early return)
+   * 0         = BM25 실행됐으나 쿼리 용어 완전 미스 → 전체 DomPruner 출력 반환
+   * > 0       = 매칭됨
    */
   bm25Confidence?: number;
 }
