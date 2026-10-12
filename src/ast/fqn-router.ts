@@ -6,6 +6,7 @@ export interface FQNNode {
   tag: string;
   text: string;
   depth: number;
+  role?: 'anchor';  // section boundary hint (e.g. dt in definition lists)
 }
 
 const NOISE_TAGS = new Set([
@@ -15,8 +16,11 @@ const NOISE_TAGS = new Set([
 
 const CONTENT_TAGS = new Set([
   'p', 'h1', 'h2', 'h3', 'h4', 'h5',
-  'li', 'td', 'th', 'blockquote', 'pre', 'code',
+  'li', 'td', 'th', 'blockquote', 'pre', 'code', 'dt',
 ]);
+
+// dt: definition list term — section boundary in API reference docs
+const ANCHOR_TAGS = new Set(['dt']);
 
 // 헤딩은 3자 이상이면 유효 ("API", "FAQ" 등), 단락/리스트는 10자 이상
 const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5']);
@@ -46,8 +50,10 @@ export function routeContentNodes(
     if (CONTENT_TAGS.has(tag)) {
       const text = extractText(node).trim();
       const minLen = HEADING_TAGS.has(tag) ? MIN_LENGTH.heading : MIN_LENGTH.body;
-      if (text.length >= minLen && !isBoilerplateText(text))
-        results.push({ tag, text, depth });
+      if (text.length >= minLen && !isBoilerplateText(text)) {
+        const role = ANCHOR_TAGS.has(tag) ? 'anchor' as const : undefined;
+        results.push(role ? { tag, text, depth, role } : { tag, text, depth });
+      }
       return false;
     }
   });

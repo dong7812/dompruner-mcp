@@ -137,7 +137,8 @@ function groupSections(nodes: FQNNode[]): Section[] {
   let current: Section = { heading: null, nodes: [], tokenCount: 0, anchorDepth: Infinity };
 
   for (const node of nodes) {
-    if (['h1', 'h2', 'h3', 'h4', 'h5'].includes(node.tag)) {
+    const isAnchor = ['h1', 'h2', 'h3', 'h4', 'h5'].includes(node.tag) || node.role === 'anchor';
+    if (isAnchor) {
       if (current.nodes.length > 0 || current.heading) sections.push(current);
       current = { heading: node, nodes: [], tokenCount: estimateTokens(node.text), anchorDepth: node.depth };
     } else {
