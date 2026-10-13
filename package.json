@@ -40,7 +40,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/mcp-server.ts",
-    "test": "node --test --require tsx/cjs test/*.ts",
+    "test": "node --test --import tsx test/*.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
