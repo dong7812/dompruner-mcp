@@ -11,9 +11,19 @@
  * These are the honest vocabulary-mismatch examples for the resume "한계" section.
  *
  * Changelog:
- *   v1: answerTerms included AbortController/makedirs — both answer different
- *       queries (fetch cancellation, dir creation) rather than the stated query.
- *       Corrected to terms co-located with the queried section.
+ *   v1→v2: All 10 cases reviewed against the principle above.
+ *   2 corrections made (both were query-answer mismatches, not code failures):
+ *     MDN Fetch: AbortController/credentials → response/body/headers/status/promise
+ *       (AbortController answers "cancel fetch", not "making a fetch request")
+ *     Python os: makedirs → oserror/string/follow_symlinks
+ *       (makedirs answers "create directory", not "getcwd/listdir")
+ *   8 cases unchanged — answerTerms verified co-located with queried section.
+ *
+ *   Known 80% cases (kept intentionally as honest failure examples):
+ *     Python re "findall": ranks 12/76 — heading-match bias fills budget before it
+ *     MDN Promise "finally": ranks 12/39 — same cause
+ *     Root cause: headingBoost(2.5×) on query-matching headings exhausts token
+ *     budget before reaching related functions. Not vocabulary mismatch.
  */
 
 const CASES = [
