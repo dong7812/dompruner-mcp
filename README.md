@@ -110,9 +110,7 @@ client = MultiServerMCPClient({
 tools = await client.get_tools()
 ```
 
----
-
-## Ensuring Your AI Always Uses DomPruner
+### Ensuring Your AI Always Uses DomPruner
 
 DomPruner's tool description already tells clients to prefer `dompruner_fetch` over WebFetch. If your client still falls back, add this to its instruction file:
 
@@ -148,7 +146,7 @@ When retrieving a URL, always use dompruner_fetch instead of WebFetch.
 
 ### vs WebFetch (live comparison, Claude Haiku)
 
-Measured using Anthropic's `web_fetch_20260209` server tool — the tool fetches the URL, converts HTML to markdown, and passes the full content into the model's context. `input_tokens` from the Claude API response captures the actual page tokens, with both paths run under identical conditions (same model, same system prompt, same tool definitions).
+Measured using Anthropic's `web_fetch_20260209` server tool under identical conditions (same model, system prompt, tool definitions). → [Full methodology](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)
 
 | Metric | `web_fetch` tool | **DomPruner** |
 |---|:---:|:---:|
@@ -202,47 +200,11 @@ The most defensible comparison: five sites that were **not** used to tune DomPru
 
 **On sites DomPruner was not tuned on: 1.9× fewer tokens with the same accuracy (96%).**
 
-### Tuning set: 10 pages (MDN, docs.python.org)
+### Additional reference: 10-page tuning set (MDN, docs.python.org)
 
-Three Crawl4AI modes against DomPruner for reference:
-- **Default** — raw markdown (no filtering)
-- **PruningContentFilter** — text-density heuristic filter (their general-purpose option)
-- **BM25ContentFilter(user_query=...)** — their query-based filter using the same query as DomPruner
+On DomPruner's own tuning pages, vs Crawl4AI `PruningContentFilter`: **13.2× smaller, 8 pp more accurate** (90% → 98%). Crawl4AI `BM25ContentFilter` with the same query returns near-empty output on 5 of 10 pages — a structural issue with `<dl>/<dt>/<dd>` definition-list pages where a threshold sweep (0.0–0.10) shows a hard cliff at 0.01 with no intermediate optimum.
 
-| Page | C4AI default | C4AI Pruning | C4AI BM25 | **DomPruner** |
-|------|:---:|:---:|:---:|:---:|
-| MDN Fetch API | 5,075 | 1,634 | 746 | **713** |
-| Python os module | 89,957 | 83,786 | 31 | **1,758** |
-| Python builtins | 34,144 | 29,344 | 741 | **755** |
-| MDN Array | 18,987 | 12,350 | 85 | **1,207** |
-| Python control flow | 13,865 | 11,671 | 461 | **1,362** |
-| MDN Flexbox | 47,258 | 6,134 | 3,015 | **1,797** |
-| Python json module | 11,867 | 9,626 | 16 | **1,998** |
-| MDN WebSocket | 5,163 | 1,375 | 282 | **704** |
-| Python re module | 25,382 | 21,531 | 9,777 | **1,837** |
-| MDN Promise | 11,068 | 6,064 | 3,493 | **1,767** |
-| **Total** | **262,766** | **183,515** | **18,647** | **13,898** |
-| **vs DomPruner** | 18.9× more | 13.2× more | 1.3× more | **—** |
-
-#### Accuracy on tuning set
-
-| Page | C4AI Pruning | C4AI BM25 | **DomPruner** |
-|------|:---:|:---:|:---:|
-| MDN Fetch API | 20% ✗ | 20% ✗ | **100% ✓** |
-| Python os module | 100% ✓ | 0% ✗ | **100% ✓** |
-| Python builtins | 100% ✓ | 0% ✗ | **100% ✓** |
-| MDN Array | 100% ✓ | 0% ✗ | **100% ✓** |
-| Python control flow | 100% ✓ | 60% ✓ | **100% ✓** |
-| MDN Flexbox | 100% ✓ | 100% ✓ | **100% ✓** |
-| Python json module | 100% ✓ | 0% ✗ | **100% ✓** |
-| MDN WebSocket | 80% ✓ | 0% ✗ | **100% ✓** |
-| Python re module | 100% ✓ | 80% ✓ | **100% ✓** |
-| MDN Promise | 100% ✓ | 100% ✓ | 80% ✓ |
-| **Avg** | **90%** | **36%** | **98%** |
-
-**Why BM25ContentFilter returns near-empty on 5 of 10 pages:** `BM25ContentFilter` operates on block-level chunks from Crawl4AI's HTML-to-markdown converter. Python docs and MDN API reference pages use `<dl>/<dt>/<dd>` definition-list structure — each function or property is isolated in its own tiny block. A threshold sweep from 0.0 to 0.10 shows a cliff at threshold=0.01: below it, the full page is returned (17,000–77,000 tokens, 100% accuracy); above it, near-empty output (16–741 tokens, 0% accuracy). There is no intermediate threshold that gives both accurate and compact output on these pages. Setting threshold=0.0 recovers accuracy but disables filtering entirely. Prose-heavy pages (React, TypeScript, Rust — as shown in the validation set above) have larger mixed-content sections where `BM25ContentFilter` works correctly at 96% accuracy.
-
-**Why PruningContentFilter drops the MDN Fetch API CORS section:** text-density heuristics discard content-rich but short sections. DomPruner is **13.2× smaller** and **8 pp more accurate** than PruningContentFilter.
+→ **[Full comparison with all tables and threshold sweep data](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md#5-vs-crawl4ai)**
 
 ---
 

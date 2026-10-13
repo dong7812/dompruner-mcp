@@ -110,9 +110,7 @@ client = MultiServerMCPClient({
 tools = await client.get_tools()
 ```
 
----
-
-## AI가 항상 DomPruner를 사용하도록 설정
+### AI가 항상 DomPruner를 사용하도록 설정
 
 툴 설명에 WebFetch 대신 `dompruner_fetch`를 우선 사용하도록 지시가 포함되어 있습니다. 그래도 내장 fetch로 폴백된다면 클라이언트의 지시 파일에 아래 규칙을 추가하세요:
 
@@ -148,7 +146,7 @@ URL을 가져올 때 WebFetch 대신 항상 dompruner_fetch를 사용하세요.
 
 ### WebFetch 비교 (라이브 측정, Claude Haiku)
 
-Anthropic의 `web_fetch_20260209` 서버 툴로 측정 — URL을 fetch해 HTML을 마크다운으로 변환 후 모델 컨텍스트에 전달. `input_tokens`는 실제 페이지 토큰을 측정하며, 두 경로 모두 동일 모델·시스템 프롬프트·툴 정의로 실행.
+Anthropic의 `web_fetch_20260209` 서버 툴로 동일 조건(모델·시스템 프롬프트·툴 정의 동일)에서 측정. → [전체 방법론](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)
 
 | 지표 | `web_fetch` 툴 | **DomPruner** |
 |---|:---:|:---:|
@@ -202,42 +200,11 @@ Crawl4AI는 크롤러 프레임워크 — 브라우저 자동화, JS 렌더링, 
 
 **DomPruner가 튜닝하지 않은 사이트에서도 1.9배 적은 토큰으로 동일 정확도(96%).**
 
-### 튜닝셋: 10개 페이지 (MDN, docs.python.org) — 참고용
+### 참고: 튜닝셋 10개 페이지 (MDN, docs.python.org)
 
-| 페이지 | C4AI 기본 | C4AI Pruning | C4AI BM25 | **DomPruner** |
-|------|:---:|:---:|:---:|:---:|
-| MDN Fetch API | 5,075 | 1,634 | 746 | **713** |
-| Python os module | 89,957 | 83,786 | 31 | **1,758** |
-| Python builtins | 34,144 | 29,344 | 741 | **755** |
-| MDN Array | 18,987 | 12,350 | 85 | **1,207** |
-| Python control flow | 13,865 | 11,671 | 461 | **1,362** |
-| MDN Flexbox | 47,258 | 6,134 | 3,015 | **1,797** |
-| Python json module | 11,867 | 9,626 | 16 | **1,998** |
-| MDN WebSocket | 5,163 | 1,375 | 282 | **704** |
-| Python re module | 25,382 | 21,531 | 9,777 | **1,837** |
-| MDN Promise | 11,068 | 6,064 | 3,493 | **1,767** |
-| **합계** | **262,766** | **183,515** | **18,647** | **13,898** |
-| **DomPruner 대비** | 18.9배 | 13.2배 | 1.3배 | **—** |
+DomPruner의 튜닝 페이지에서 Crawl4AI `PruningContentFilter` 대비: **13.2배 작고 8%p 더 정확** (90% → 98%). 동일 쿼리로 `BM25ContentFilter`를 적용하면 10개 중 5개에서 거의 빈 결과 — `<dl>/<dt>/<dd>` 정의 목록 구조 페이지에서 threshold 스윕(0.0~0.10) 시 0.01에서 절벽이 나타나며 중간 최적값이 존재하지 않는 구조적 문제입니다.
 
-#### 튜닝셋 정확도
-
-| 페이지 | C4AI Pruning | C4AI BM25 | **DomPruner** |
-|------|:---:|:---:|:---:|
-| MDN Fetch API | 20% ✗ | 20% ✗ | **100% ✓** |
-| Python os module | 100% ✓ | 0% ✗ | **100% ✓** |
-| Python builtins | 100% ✓ | 0% ✗ | **100% ✓** |
-| MDN Array | 100% ✓ | 0% ✗ | **100% ✓** |
-| Python control flow | 100% ✓ | 60% ✓ | **100% ✓** |
-| MDN Flexbox | 100% ✓ | 100% ✓ | **100% ✓** |
-| Python json module | 100% ✓ | 0% ✗ | **100% ✓** |
-| MDN WebSocket | 80% ✓ | 0% ✗ | **100% ✓** |
-| Python re module | 100% ✓ | 80% ✓ | **100% ✓** |
-| MDN Promise | 100% ✓ | 100% ✓ | 80% ✓ |
-| **평균** | **90%** | **36%** | **98%** |
-
-**BM25ContentFilter가 10개 중 5개에서 거의 빈 결과를 낸 이유:** `BM25ContentFilter`는 Crawl4AI HTML→마크다운 변환기의 블록 단위 청크에 BM25를 적용합니다. Python 문서와 MDN API 레퍼런스 페이지는 `<dl>/<dt>/<dd>` 정의 목록 구조로 함수나 속성마다 독립된 작은 블록으로 분리됩니다. threshold를 0.0~0.10 구간에서 스윕한 결과, **0.01에서 절벽**이 나타납니다 — 0.0은 전체 페이지(17,000~77,000 토큰, 100% 정확도), 0.01 이상은 거의 빈 결과(16~741 토큰, 0% 정확도). 이 구간에서 정확도와 압축을 동시에 만족하는 임계값은 존재하지 않습니다. 산문형 페이지(React, TypeScript, Rust)에서는 동일 필터가 96% 정확도로 정상 동작합니다.
-
-**PruningContentFilter가 MDN Fetch API의 CORS 섹션을 버리는 이유:** 텍스트 밀도 휴리스틱이 콘텐츠가 풍부하지만 짧은 섹션을 제거합니다. DomPruner는 PruningContentFilter 대비 **13.2배 작고 8%p 더 정확**합니다.
+→ **[전체 비교 표·threshold 스윕 데이터](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md#5-vs-crawl4ai)**
 
 ---
 
