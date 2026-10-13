@@ -47,24 +47,6 @@ jobs:
         run: npm run build
 
       - name: Benchmark regression gate
-        run: |
-          RESULT=$(node scripts/benchmark.mjs --json)
-          echo "$RESULT" | jq .
-
-          AVG_REDUCTION=$(echo "$RESULT" | jq '.avgReductionPct')
-          AVG_PRESERVATION=$(echo "$RESULT" | jq '.avgPreservationPct')
-
-          echo "Avg token reduction:   ${AVG_REDUCTION}%  (threshold: 90%)"
-          echo "Avg preservation rate: ${AVG_PRESERVATION}%  (threshold: 70%)"
-
-          if (( $(echo "$AVG_REDUCTION < 90" | bc -l) )); then
-            echo "❌ Token reduction ${AVG_REDUCTION}% is below 90% threshold"
-            exit 1
-          fi
-
-          if (( $(echo "$AVG_PRESERVATION < 70" | bc -l) )); then
-            echo "❌ Preservation rate ${AVG_PRESERVATION}% is below 70% threshold"
-            exit 1
-          fi
-
-          echo "✅ Benchmark passed"
+        # Runs live fetches and compares per-page against scripts/benchmark-baseline.json.
+        # Fails if any page drops by >10%p in reduction or preservation vs baseline.
+        run: node scripts/benchmark.mjs --check

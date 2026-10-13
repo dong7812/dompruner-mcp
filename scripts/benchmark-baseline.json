@@ -1,0 +1,18 @@
+{
+  "_comment": "Baseline from benchmark.mjs run. CI gates on per-page delta, not absolute values.",
+  "_generated": "2026-10-13",
+  "avgReductionPct": 98.0,
+  "avgPreservationPct": 92.0,
+  "pages": [
+    { "label": "MDN Fetch API",        "reductionPct": 98.1, "preservationPct": 100 },
+    { "label": "Python os module",     "reductionPct": 99.1, "preservationPct":  60 },
+    { "label": "Python builtins",      "reductionPct": 99.1, "preservationPct": 100 },
+    { "label": "MDN Array",            "reductionPct": 98.0, "preservationPct": 100 },
+    { "label": "Python control flow",  "reductionPct": 96.1, "preservationPct": 100 },
+    { "label": "MDN Flexbox",          "reductionPct": 98.0, "preservationPct": 100 },
+    { "label": "Python json module",   "reductionPct": 93.0, "preservationPct": 100 },
+    { "label": "MDN WebSocket",        "reductionPct": 98.2, "preservationPct": 100 },
+    { "label": "Python re module",     "reductionPct": 97.1, "preservationPct":  80 },
+    { "label": "MDN Promise",          "reductionPct": 96.8, "preservationPct":  80 }
+  ]
+}

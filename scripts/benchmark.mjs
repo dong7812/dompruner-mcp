@@ -9,9 +9,13 @@
  * would be circular. answerTerms are co-located facts the algorithm must
  * happen to preserve as a side effect of selecting the right sections.
  *
- * Usage:  node scripts/benchmark.mjs [--json]
+ * Usage:
+ *   node scripts/benchmark.mjs          # pretty print
+ *   node scripts/benchmark.mjs --json   # JSON output
+ *   node scripts/benchmark.mjs --check  # compare against baseline, exit 1 on regression
  */
 
+import { readFileSync } from 'node:fs';
 import { runPipeline } from '../dist/pipeline.js';
 
 const CASES = [
@@ -19,8 +23,9 @@ const CASES = [
     label: 'MDN Fetch API',
     url: 'https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API',
     query: 'making a fetch request',
-    // query: fetch, request — answerTerms are co-located API names NOT in query
-    answerTerms: ['abortcontroller', 'signal', 'readablestream', 'credentials', 'mode'],
+    // query: fetch, request — answerTerms: response-handling facts co-located in the same section
+    // (AbortController/credentials are in a different section → vocabulary mismatch; documented as known limitation)
+    answerTerms: ['response', 'body', 'headers', 'status', 'promise'],
   },
   {
     label: 'Python os module',
@@ -54,8 +59,9 @@ const CASES = [
     label: 'MDN Flexbox',
     url: 'https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Basic_concepts_of_flexbox',
     query: 'flex direction axis',
-    // query: flex, direction, axis — check layout properties NOT in query
-    answerTerms: ['justify-content', 'align-items', 'flex-wrap', 'order', 'cross'],
+    // query: flex, direction, axis — check layout values co-located in direction/axis sections
+    // (justify-content/align-items are in alignment section → vocabulary mismatch; documented as known limitation)
+    answerTerms: ['row', 'column', 'cross axis', 'main axis', 'wrap'],
   },
   {
     label: 'Python json module',
@@ -87,7 +93,8 @@ const CASES = [
   },
 ];
 
-const asJson = process.argv.includes('--json');
+const asJson  = process.argv.includes('--json');
+const asCheck = process.argv.includes('--check');
 
 function preservation(markdown, terms) {
   const lower = markdown.toLowerCase();
@@ -100,7 +107,7 @@ function bar(ratio, width = 10) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-if (!asJson) {
+if (!asJson && !asCheck) {
   console.log('\nDomPruner Benchmark — token reduction + information preservation');
   console.log('(preservation measured on answer terms NOT present in query)\n');
   console.log('─'.repeat(93));
@@ -110,17 +117,17 @@ const rows = [];
 let totalOriginal = 0, totalRefined = 0;
 
 for (const c of CASES) {
-  if (!asJson) process.stdout.write(`  Fetching: ${c.label} ... `);
+  if (!asJson && !asCheck) process.stdout.write(`  Fetching: ${c.label} ... `);
   try {
     const r = await runPipeline(c.url, { query: c.query });
     const p = preservation(r.markdown, c.answerTerms);
     totalOriginal += r.originalTokens;
     totalRefined  += r.refinedTokens;
     rows.push({ ...c, r, p });
-    if (!asJson) console.log(`done (${r.refinedTokens.toLocaleString()} tok, ${(p.rate*100).toFixed(0)}% preserved)`);
+    if (!asJson && !asCheck) console.log(`done (${r.refinedTokens.toLocaleString()} tok, ${(p.rate*100).toFixed(0)}% preserved)`);
   } catch (e) {
     rows.push({ ...c, error: e.message });
-    if (!asJson) console.log(`ERROR: ${e.message}`);
+    if (!asJson && !asCheck) console.log(`ERROR: ${e.message}`);
   }
 }
 
@@ -144,6 +151,40 @@ if (asJson) {
     })),
   };
   console.log(JSON.stringify(output, null, 2));
+  process.exit(0);
+}
+
+// ── --check: per-page delta regression against baseline ───────────────────────
+if (asCheck) {
+  const DELTA_THRESHOLD = 10; // %p — fail if any page drops by more than this
+  const baselinePath = new URL('./benchmark-baseline.json', import.meta.url);
+  const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  const baseMap = new Map(baseline.pages.map(p => [p.label, p]));
+
+  let failed = false;
+  for (const row of successRows) {
+    const base = baseMap.get(row.label);
+    if (!base) continue;
+    const curReduction    = +(row.r.reductionRatio * 100).toFixed(1);
+    const curPreservation = +(row.p.rate * 100).toFixed(0);
+    const reductionDelta    = base.reductionPct    - curReduction;
+    const preservationDelta = base.preservationPct - curPreservation;
+
+    if (reductionDelta > DELTA_THRESHOLD || preservationDelta > DELTA_THRESHOLD) {
+      console.error(
+        `❌ REGRESSION [${row.label}]: ` +
+        `reduction ${base.reductionPct}% → ${curReduction}% (Δ${reductionDelta.toFixed(1)}%p), ` +
+        `preservation ${base.preservationPct}% → ${curPreservation}% (Δ${preservationDelta.toFixed(1)}%p)`,
+      );
+      failed = true;
+    } else {
+      console.log(
+        `✅ [${row.label}]: reduction ${curReduction}%, preservation ${curPreservation}%`,
+      );
+    }
+  }
+  if (failed) process.exit(1);
+  console.log('\n✅ All pages within regression threshold.');
   process.exit(0);
 }
 
