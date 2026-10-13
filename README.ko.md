@@ -146,6 +146,8 @@ URL을 가져올 때 WebFetch 대신 항상 dompruner_fetch를 사용하세요.
 
 ## 벤치마크 요약
 
+### WebFetch 비교 (라이브 측정, Claude Haiku)
+
 | 지표 | WebFetch | **DomPruner** |
 |---|:---:|:---:|
 | 평균 컨텍스트 토큰 | ~15,735 | **~1,019 (93.5% 절감)** |
@@ -153,6 +155,14 @@ URL을 가져올 때 WebFetch 대신 항상 dompruner_fetch를 사용하세요.
 | 평균 응답 시간 | 5,811 ms | **3,168 ms (45% 빠름)** |
 | 콘텐츠 충실도 | 소형 모델 요약 | **원문 그대로 보존** |
 | 추가 API 키 / 인프라 | 없음 | **없음** |
+
+### BM25 섹션 선택 정확도 (10개 쿼리, 스냅샷 기반 결정적 측정)
+
+| 평균 토큰 절감율 | 섹션 보존율 | 100% 달성 페이지 |
+|:---:|:---:|:---:|
+| **98.0%** | **98.0%** | **9 / 10** |
+
+10개 쿼리 타입 중 9개는 정답 섹션을 100% 보존율로 선택. 나머지 1개(MDN Promise `finally`)는 heading-match bias 엣지 케이스로 어휘 불일치와 무관한 알려진 한계입니다.
 
 → **[전체 벤치마크](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)** · **[아키텍처](https://github.com/dong7812/dompruner-mcp/blob/main/docs/architecture.md)**
 

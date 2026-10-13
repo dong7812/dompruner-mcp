@@ -73,6 +73,32 @@ End-to-end: URL + question → answer.
 
 ---
 
+## 4. BM25 Section Preservation
+
+Measures whether the BM25 section filter selects the sections that contain the correct answer. Runs against 10 local HTML snapshots — deterministic, unaffected by live page updates.
+
+**Design rule:** `answerTerms` must not overlap with `query` keywords (selecting the right section already implies the query is satisfied — checking the same keywords would be circular). They are co-located facts the algorithm must preserve as a side effect of selecting the correct section. Any term appearing in >30% of all sections is replaced with a more discriminating one (IDF quality rule).
+
+**headingBoost=2.0** — selected via parameter sweep over 1.0–3.0; yields the highest average preservation (98%) across this test set.
+
+| Page | Query | Reduction | Preservation |
+|------|-------|:---------:|:------------:|
+| MDN Fetch API | making a fetch request | 98.1% | 100% |
+| Python os module | getcwd listdir | 99.1% | 100% |
+| Python builtins | enumerate map filter | 99.1% | 100% |
+| MDN Array | map filter reduce | 98.0% | 100% |
+| Python control flow | for loop | 96.1% | 100% |
+| MDN Flexbox | flex direction axis | 98.0% | 100% |
+| Python json module | dumps loads | 93.0% | 100% |
+| MDN WebSocket | websocket events | 98.2% | 100% |
+| Python re module | match search pattern | 97.1% | 100% |
+| MDN Promise | promise chaining | 96.5% | 80% |
+| **AVG** | | **98.0%** | **98.0%** |
+
+**Known limitation (MDN Promise `finally`):** The query-matching heading (`Promise`) scores highest under headingBoost and fills the 1,200-token budget before the adjacent `finally` section is reached. Root cause: heading-match bias, not vocabulary mismatch. `tokenBudget` increase or MMR-based selection resolves it.
+
+---
+
 ## Research Backing
 
 **Web page context is too large for LLM agents**

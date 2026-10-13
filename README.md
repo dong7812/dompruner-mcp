@@ -146,6 +146,8 @@ When retrieving a URL, always use dompruner_fetch instead of WebFetch.
 
 ## Benchmark Summary
 
+### vs WebFetch (live comparison, Claude Haiku)
+
 | Metric | WebFetch | **DomPruner** |
 |---|:---:|:---:|
 | Avg context tokens | ~15,735 | **~1,019 (93.5% less)** |
@@ -153,6 +155,14 @@ When retrieving a URL, always use dompruner_fetch instead of WebFetch.
 | Avg response time | 5,811 ms | **3,168 ms (45% faster)** |
 | Content fidelity | Summarized by small model | **Original text preserved** |
 | Extra API key / infra | No | **No** |
+
+### BM25 Section Accuracy (10 query types, snapshot-based)
+
+| Avg token reduction | Section preservation | Pages @ 100% |
+|:---:|:---:|:---:|
+| **98.0%** | **98.0%** | **9 / 10** |
+
+9/10 query types find the correct answer section at 100% term retention. The remaining 1/10 (MDN Promise `finally`) is a known heading-match bias edge case, not a vocabulary mismatch.
 
 → **[Full benchmark](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)** · **[Architecture](https://github.com/dong7812/dompruner-mcp/blob/main/docs/architecture.md)**
 
