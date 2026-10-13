@@ -169,6 +169,83 @@ headingBoost=2.0 was selected by running a parameter sweep (1.0–3.0) on the tu
 
 ---
 
+## vs Crawl4AI
+
+Crawl4AI is a crawler framework — browser automation, JS rendering, click/scroll interaction, JSON extraction, deep crawl. DomPruner is LLM context middleware — a single-purpose layer that reduces token cost when an agent already knows the URL.
+
+**They solve different problems.** But both can be used to read a web page inside an MCP agent, so the comparison is real.
+
+### Setup
+
+| | Crawl4AI | **DomPruner** |
+|---|:---:|:---:|
+| Install | `pip install crawl4ai && crawl4ai-setup` (Chromium ~300 MB) | **`npx -y dompruner-mcp`** |
+| Browser required | Default install includes Chromium; HTTP-only mode available | **No** (SSR; Playwright only on CSR detection) |
+| MCP server | Requires running the Crawl4AI Docker server | **`npx -y dompruner-mcp` — no server** |
+| Config to filter tokens | Manual content filter setup | **Zero — just pass `query=`** |
+
+### Token count: same 10 pages, measured today
+
+Three Crawl4AI modes are compared:
+- **Default** — raw markdown (no filtering)
+- **PruningContentFilter** — text-density heuristic filter (their general-purpose option)
+- **BM25ContentFilter(user_query=...)** — their query-based filter using the **same query as DomPruner** (direct apples-to-apples)
+
+| Page | C4AI default | C4AI Pruning | C4AI BM25 | **DomPruner** |
+|------|:---:|:---:|:---:|:---:|
+| MDN Fetch API | 5,075 | 1,634 | 746 | **713** |
+| Python os module | 89,957 | 83,786 | 31 | **1,758** |
+| Python builtins | 34,144 | 29,344 | 741 | **755** |
+| MDN Array | 18,987 | 12,350 | 85 | **1,207** |
+| Python control flow | 13,865 | 11,671 | 461 | **1,362** |
+| MDN Flexbox | 47,258 | 6,134 | 3,015 | **1,797** |
+| Python json module | 11,867 | 9,626 | 16 | **1,998** |
+| MDN WebSocket | 5,163 | 1,375 | 282 | **704** |
+| Python re module | 25,382 | 21,531 | 9,777 | **1,837** |
+| MDN Promise | 11,068 | 6,064 | 3,493 | **1,767** |
+| **Total** | **262,766** | **183,515** | **18,647** | **13,898** |
+| **vs DomPruner** | 18.9× more | 13.2× more | 1.3× more | **—** |
+
+### Accuracy: does the right content survive?
+
+We measured whether key facts (`answerTerms`) appear in each tool's output — the same metric as DomPruner's BM25 section accuracy test.
+
+| Page | C4AI Pruning | C4AI BM25 | **DomPruner** |
+|------|:---:|:---:|:---:|
+| MDN Fetch API | 20% ✗ | 20% ✗ | **100% ✓** |
+| Python os module | 100% ✓ | 0% ✗ | **100% ✓** |
+| Python builtins | 100% ✓ | 0% ✗ | **100% ✓** |
+| MDN Array | 100% ✓ | 0% ✗ | **100% ✓** |
+| Python control flow | 100% ✓ | 60% ✓ | **100% ✓** |
+| MDN Flexbox | 100% ✓ | 100% ✓ | **100% ✓** |
+| Python json module | 100% ✓ | 0% ✗ | **100% ✓** |
+| MDN WebSocket | 80% ✓ | 0% ✗ | **100% ✓** |
+| Python re module | 100% ✓ | 80% ✓ | **100% ✓** |
+| MDN Promise | 100% ✓ | 100% ✓ | 80% ✓ |
+| **Avg** | **90%** | **36%** | **98%** |
+
+Crawl4AI's `BM25ContentFilter` over-aggressively prunes technical documentation: for Python docs pages it returns as few as 16 tokens — effectively empty — while missing all answer terms. DomPruner's DOM-level extraction preserves document structure before BM25 scoring, preventing this.
+
+Crawl4AI's `PruningContentFilter` (text-density heuristics) drops content-rich but short sections — e.g., the MDN Fetch API CORS/credentials section. DomPruner is **13.2× smaller** and **8 pp more accurate** than PruningContentFilter.
+
+### Held-out validation: 5 sites not in DomPruner's tuning set
+
+To confirm these results aren't specific to DomPruner's own tuning pages, we ran the same BM25ContentFilter comparison on five held-out sites: react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org.
+
+| Page | C4AI BM25 | **DomPruner** |
+|------|:---:|:---:|
+| React useEffect | 4,275 | **1,257** |
+| TypeScript narrowing | 2,782 | **1,214** |
+| Express routing | 1,938 | **1,799** |
+| Rust ownership | 1,832 | **718** |
+| Next.js layouts | 1,505 | **1,379** |
+| **Total** | **12,332** | **6,367** |
+| **Accuracy** | **96%** | **96%** |
+
+On held-out sites: DomPruner uses **1.9× fewer tokens** with the **same accuracy** as Crawl4AI BM25ContentFilter.
+
+---
+
 ## Related
 
 - **[dompruner-py](https://github.com/dong7812/dompruner-py)** — Python port. `DomPrunerLoader`, `DomPrunerSitemapLoader`, `DomPrunerFetchTool` for LangChain. `pip install dompruner`.
