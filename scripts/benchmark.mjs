@@ -7,94 +7,47 @@
  * Design rule: answerTerms must NOT overlap with query terms.
  * BM25 selects sections by query keywords — checking those same keywords
  * would be circular. answerTerms are co-located facts the algorithm must
- * happen to preserve as a side effect of selecting the right sections.
+ * preserve as a side effect of selecting the right sections.
+ * See scripts/benchmark-cases.mjs for the changelog.
  *
  * Usage:
- *   node scripts/benchmark.mjs          # pretty print
- *   node scripts/benchmark.mjs --json   # JSON output
- *   node scripts/benchmark.mjs --check  # compare against baseline, exit 1 on regression
+ *   node scripts/benchmark.mjs          # pretty print (live fetch)
+ *   node scripts/benchmark.mjs --json   # JSON output  (live fetch)
+ *   node scripts/benchmark.mjs --check  # regression check against baseline
+ *                                         uses snapshots/ if present, else live fetch
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { createGunzip } from 'node:zlib';
+import { pipeline as streamPipeline } from 'node:stream/promises';
+import { Writable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+import CASES from './benchmark-cases.mjs';
 import { runPipeline } from '../dist/pipeline.js';
 
-const CASES = [
-  {
-    label: 'MDN Fetch API',
-    url: 'https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API',
-    query: 'making a fetch request',
-    // query: fetch, request — answerTerms: response-handling facts co-located in the same section
-    // (AbortController/credentials are in a different section → vocabulary mismatch; documented as known limitation)
-    answerTerms: ['response', 'body', 'headers', 'status', 'promise'],
-  },
-  {
-    label: 'Python os module',
-    url: 'https://docs.python.org/3/library/os.html',
-    query: 'getcwd listdir',
-    // query: getcwd, listdir — answer must include related params/returns
-    answerTerms: ['bytes', 'encoding', 'scandir', 'makedirs', 'environ'],
-  },
-  {
-    label: 'Python builtins',
-    url: 'https://docs.python.org/3/library/functions.html',
-    query: 'enumerate map filter',
-    // query: enumerate, map, filter — check non-query builtins preserved nearby
-    answerTerms: ['start', 'iterable', 'function', 'sorted', 'reversed'],
-  },
-  {
-    label: 'MDN Array',
-    url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array',
-    query: 'map filter reduce',
-    // query: map, filter, reduce — check mutation/accessor methods nearby
-    answerTerms: ['splice', 'slice', 'indexof', 'flat', 'entries'],
-  },
-  {
-    label: 'Python control flow',
-    url: 'https://docs.python.org/3/tutorial/controlflow.html',
-    query: 'for loop',
-    // query: for, loop — check co-located control-flow concepts
-    answerTerms: ['range', 'continue', 'pass', 'else', 'break'],
-  },
-  {
-    label: 'MDN Flexbox',
-    url: 'https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Basic_concepts_of_flexbox',
-    query: 'flex direction axis',
-    // query: flex, direction, axis — check layout values co-located in direction/axis sections
-    // (justify-content/align-items are in alignment section → vocabulary mismatch; documented as known limitation)
-    answerTerms: ['row', 'column', 'cross axis', 'main axis', 'wrap'],
-  },
-  {
-    label: 'Python json module',
-    url: 'https://docs.python.org/3/library/json.html',
-    query: 'dumps loads',
-    // query: dumps, loads — check encoding options NOT in query
-    answerTerms: ['indent', 'ensure_ascii', 'separators', 'cls', 'skipkeys'],
-  },
-  {
-    label: 'MDN WebSocket',
-    url: 'https://developer.mozilla.org/en-US/docs/Web/API/WebSocket',
-    query: 'websocket events',
-    // query: websocket, events — check API surface NOT in query
-    answerTerms: ['readystate', 'binarytype', 'bufferedamount', 'onopen', 'protocol'],
-  },
-  {
-    label: 'Python re module',
-    url: 'https://docs.python.org/3/library/re.html',
-    query: 'match search pattern',
-    // query: match, search, pattern — check return types / flags NOT in query
-    answerTerms: ['group', 'span', 'flags', 'findall', 'sub'],
-  },
-  {
-    label: 'MDN Promise',
-    url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise',
-    query: 'promise chaining',
-    // query: promise, chaining — check concurrency methods NOT in query
-    answerTerms: ['allsettled', 'any', 'race', 'finally', 'executor'],
-  },
-];
+const __dir = dirname(fileURLToPath(import.meta.url));
+const SNAP_DIR = join(__dir, 'snapshots');
 
 const asJson  = process.argv.includes('--json');
 const asCheck = process.argv.includes('--check');
+
+// ── snapshot loader ───────────────────────────────────────────────────────────
+
+async function loadSnapshot(label) {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const path = join(SNAP_DIR, `${slug}.json.gz`);
+  if (!existsSync(path)) return null;
+  const chunks = [];
+  await streamPipeline(
+    (await import('node:fs')).createReadStream(path),
+    createGunzip(),
+    new Writable({ write(chunk, _enc, cb) { chunks.push(chunk); cb(); } }),
+  );
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
+// ── run benchmark ─────────────────────────────────────────────────────────────
 
 function preservation(markdown, terms) {
   const lower = markdown.toLowerCase();
@@ -109,7 +62,7 @@ function bar(ratio, width = 10) {
 
 if (!asJson && !asCheck) {
   console.log('\nDomPruner Benchmark — token reduction + information preservation');
-  console.log('(preservation measured on answer terms NOT present in query)\n');
+  console.log('(preservation: answer terms NOT in query, co-located in queried section)\n');
   console.log('─'.repeat(93));
 }
 
@@ -117,14 +70,23 @@ const rows = [];
 let totalOriginal = 0, totalRefined = 0;
 
 for (const c of CASES) {
-  if (!asJson && !asCheck) process.stdout.write(`  Fetching: ${c.label} ... `);
+  if (!asJson && !asCheck) process.stdout.write(`  ${c.label} ... `);
   try {
-    const r = await runPipeline(c.url, { query: c.query });
+    // Use snapshot when available (--check mode for deterministic CI),
+    // fall back to live fetch otherwise.
+    const snap = (asCheck || !asJson) ? await loadSnapshot(c.label) : null;
+    const opts = snap
+      ? { query: c.query, prefetched: { html: snap.html, renderType: snap.renderType, ssgPayload: snap.ssgPayload } }
+      : { query: c.query };
+    const r = await runPipeline(c.url, opts);
     const p = preservation(r.markdown, c.answerTerms);
     totalOriginal += r.originalTokens;
     totalRefined  += r.refinedTokens;
-    rows.push({ ...c, r, p });
-    if (!asJson && !asCheck) console.log(`done (${r.refinedTokens.toLocaleString()} tok, ${(p.rate*100).toFixed(0)}% preserved)`);
+    rows.push({ ...c, r, p, fromSnapshot: !!snap });
+    if (!asJson && !asCheck) {
+      const src = snap ? '[snap]' : '[live]';
+      console.log(`${src} ${r.refinedTokens.toLocaleString()} tok, ${(p.rate*100).toFixed(0)}% preserved`);
+    }
   } catch (e) {
     rows.push({ ...c, error: e.message });
     if (!asJson && !asCheck) console.log(`ERROR: ${e.message}`);
@@ -135,12 +97,16 @@ const successRows  = rows.filter(r => !r.error);
 const avgReduction = 1 - totalRefined / totalOriginal;
 const avgPreserved = successRows.reduce((s, r) => s + r.p.rate, 0) / successRows.length;
 const above80      = successRows.filter(r => r.p.rate >= 0.8).length;
+const snapCount    = successRows.filter(r => r.fromSnapshot).length;
+
+// ── --json output ─────────────────────────────────────────────────────────────
 
 if (asJson) {
   const output = {
     avgReductionPct: +(avgReduction * 100).toFixed(1),
     avgPreservationPct: +(avgPreserved * 100).toFixed(1),
     above80of: `${above80}/${successRows.length}`,
+    snapshotsUsed: snapCount,
     pages: successRows.map(r => ({
       label: r.label,
       originalTokens: r.r.originalTokens,
@@ -155,11 +121,19 @@ if (asJson) {
 }
 
 // ── --check: per-page delta regression against baseline ───────────────────────
+
 if (asCheck) {
-  const DELTA_THRESHOLD = 10; // %p — fail if any page drops by more than this
-  const baselinePath = new URL('./benchmark-baseline.json', import.meta.url);
+  const DELTA_THRESHOLD = 10; // %p
+  const baselinePath = join(__dir, 'benchmark-baseline.json');
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
   const baseMap = new Map(baseline.pages.map(p => [p.label, p]));
+
+  const snapshotNote = snapCount === CASES.length
+    ? `(${snapCount} snapshots, deterministic)`
+    : snapCount > 0
+      ? `(${snapCount} snapshots + ${CASES.length - snapCount} live fetches)`
+      : '(live fetches — run update-snapshots.mjs for deterministic CI)';
+  console.log(`\nRegression check ${snapshotNote}\n`);
 
   let failed = false;
   for (const row of successRows) {
@@ -178,15 +152,16 @@ if (asCheck) {
       );
       failed = true;
     } else {
-      console.log(
-        `✅ [${row.label}]: reduction ${curReduction}%, preservation ${curPreservation}%`,
-      );
+      console.log(`✅ [${row.label}]: reduction ${curReduction}%, preservation ${curPreservation}%`);
     }
   }
+  console.log('');
   if (failed) process.exit(1);
-  console.log('\n✅ All pages within regression threshold.');
+  console.log('✅ All pages within regression threshold.');
   process.exit(0);
 }
+
+// ── pretty print ──────────────────────────────────────────────────────────────
 
 console.log('\n' + '─'.repeat(93));
 console.log(
@@ -226,4 +201,5 @@ console.log(
   `  ${bar(avgPreserved)} ${(avgPreserved*100).toFixed(1)}%`.padEnd(20),
 );
 console.log(`\n  ✦ Pages ≥80% preservation: ${above80}/${successRows.length}`);
+if (snapCount > 0) console.log(`  ✦ Used snapshots: ${snapCount}/${CASES.length}`);
 console.log('─'.repeat(93) + '\n');

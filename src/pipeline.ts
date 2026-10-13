@@ -10,6 +10,8 @@ import { createSectionBm25Rule, tokenize, bm25Score } from './rule-engine/builti
 export interface PipelineOptions {
   rules?: (AstRAGRule | string)[];
   query?: string;
+  /** Skip HTTP fetch and use pre-fetched page data (for deterministic tests). */
+  prefetched?: { html: string; renderType: string; ssgPayload?: unknown };
 }
 
 export interface PipelineResult {
@@ -179,15 +181,17 @@ export async function runPipeline(
   const t0 = performance.now();
 
   // ── L2 check + fetch (per-URL semaphore) ─────────────────────────────────────
-  const fetched = await getFetchSem(url).run(async () => {
-    // sem 획득 후 double-check: 대기 중 다른 요청이 L2를 채웠을 수 있음
-    const l2Hit = l2Cache.get(url);
-    if (l2Hit && l2Hit.expiresAt > Date.now()) return l2Hit.fetched;
+  const fetched = options.prefetched
+    ? { url, html: options.prefetched.html, renderType: options.prefetched.renderType as 'SSR' | 'SSG' | 'CSR', ssgPayload: options.prefetched.ssgPayload }
+    : await getFetchSem(url).run(async () => {
+        // sem 획득 후 double-check: 대기 중 다른 요청이 L2를 채웠을 수 있음
+        const l2Hit = l2Cache.get(url);
+        if (l2Hit && l2Hit.expiresAt > Date.now()) return l2Hit.fetched;
 
-    const result = await fetchPage(url);
-    lruSet(l2Cache, url, { fetched: result, expiresAt: Date.now() + L2_TTL_MS }, L2_MAX);
-    return result;
-  });
+        const result = await fetchPage(url);
+        lruSet(l2Cache, url, { fetched: result, expiresAt: Date.now() + L2_TTL_MS }, L2_MAX);
+        return result;
+      });
   const fetchMs = performance.now() - t0;
 
   const t1 = performance.now();
