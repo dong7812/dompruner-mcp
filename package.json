@@ -40,7 +40,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/mcp-server.ts",
-    "prepublishOnly": "npm run build"
+    "test": "node --test --require tsx/cjs test/*.ts",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

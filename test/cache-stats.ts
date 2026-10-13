@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getCacheStats, clearCache } from '../src/pipeline.ts';
+import { getCacheStats, clearCache } from '../dist/pipeline.js';
 
 test('getCacheStats returns l1 and l2 with expired fields', () => {
   clearCache();
