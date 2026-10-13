@@ -8,7 +8,7 @@ import {
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createRequire } from 'module';
-import { runPipeline, type PipelineResult } from './pipeline.js';
+import { runPipeline, getSections, type PipelineResult } from './pipeline.js';
 import { collectSitemapUrls } from './ast/sitemap.js';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
@@ -79,6 +79,15 @@ function buildStatsBlock(r: PipelineResult): string {
     `> | Saved | **${saved.toLocaleString()} (${pct}%)** |`,
     `> Fetch: ${r.fetchMs.toFixed(0)}ms · Parse: ${r.parseMs.toFixed(1)}ms`,
   ].join('\n');
+}
+
+function buildSkippedHint(url: string, skipped: NonNullable<PipelineResult['skippedSections']>): string {
+  const lines = [
+    `> **Missed sections** — relevant to your query but outside the 1,200-tok budget.`,
+    `> Call \`dompruner_get_sections("${url}", [...])\` with the IDs below to retrieve them:`,
+    ...skipped.map(s => `> - \`${s.id}\` · ${s.heading} · ~${s.tokens} tok`),
+  ];
+  return lines.join('\n');
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
@@ -160,6 +169,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['url'],
       },
     },
+    {
+      name: 'dompruner_get_sections',
+      description:
+        'Retrieves specific sections from a page by section ID. '
+        + 'Use this when dompruner_fetch returns a "Missed sections" notice — those sections were relevant to your query but fell outside the 1,200-tok token budget. '
+        + 'Pass the URL and the section IDs listed in that notice. '
+        + 'If the page is still in the L2 cache (within 5 minutes of the original fetch), no HTTP request is made — only DOM re-parsing.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The same URL that was passed to dompruner_fetch.',
+          },
+          section_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Section IDs from the "Missed sections" list in a previous dompruner_fetch response.',
+          },
+        },
+        required: ['url', 'section_ids'],
+      },
+    },
   ],
 }));
 
@@ -229,7 +261,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const r = await runPipeline(resolvedUrl, { query });
-    return { content: [{ type: 'text', text: buildStatsBlock(r) + '\n\n---\n\n' + r.markdown }] };
+    let text = buildStatsBlock(r) + '\n\n---\n\n' + r.markdown;
+    if (r.skippedSections?.length) {
+      text += '\n\n---\n\n' + buildSkippedHint(resolvedUrl, r.skippedSections);
+    }
+    return { content: [{ type: 'text', text }] };
   }
 
   // ── dompruner_sitemap ─────────────────────────────────────────────────────────
@@ -331,6 +367,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: 'text', text: statsBlock + '\n\n---\n\n' + pages }],
     };
+  }
+
+  // ── dompruner_get_sections ────────────────────────────────────────────────────
+  if (name === 'dompruner_get_sections') {
+    const { url, section_ids } = args as { url: string; section_ids: string[] };
+    const sections = await getSections(url, section_ids);
+
+    if (!sections.length) {
+      return {
+        content: [{
+          type: 'text',
+          text: [
+            `**DomPruner**: No sections found for IDs: ${section_ids.map(id => `\`${id}\``).join(', ')}.`,
+            `The page may have changed or the IDs may be incorrect.`,
+            `Tip: re-run \`dompruner_fetch\` to get fresh section IDs.`,
+          ].join(' '),
+        }],
+      };
+    }
+
+    const text = sections.map(s => s.content).join('\n\n---\n\n');
+    return { content: [{ type: 'text', text }] };
   }
 
   // ── dompruner_analyze ──────────────────────────────────────────────────────────
