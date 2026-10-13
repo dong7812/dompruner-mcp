@@ -371,15 +371,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── dompruner_get_sections ────────────────────────────────────────────────────
   if (name === 'dompruner_get_sections') {
-    const { url, section_ids } = args as { url: string; section_ids: string[] };
-    const sections = await getSections(url, section_ids);
+    const { url, section_ids } = args as { url?: string; section_ids?: unknown };
+
+    if (typeof url !== 'string' || !url.startsWith('http')) {
+      throw new Error('dompruner_get_sections requires a valid http(s) url');
+    }
+    if (!Array.isArray(section_ids) || section_ids.length === 0) {
+      throw new Error('dompruner_get_sections requires section_ids to be a non-empty array of strings');
+    }
+    const ids = section_ids.filter((id): id is string => typeof id === 'string');
+
+    let sections;
+    try {
+      sections = await getSections(url, ids);
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes('SSG_NOT_SUPPORTED')) {
+        return {
+          content: [{
+            type: 'text',
+            text: `**DomPruner**: \`${new URL(url).hostname}\` uses SSG rendering. DOM-based section retrieval is not supported for SSG pages. Use \`dompruner_fetch(url, query)\` to get the full filtered content instead.`,
+          }],
+        };
+      }
+      throw e;
+    }
 
     if (!sections.length) {
       return {
         content: [{
           type: 'text',
           text: [
-            `**DomPruner**: No sections found for IDs: ${section_ids.map(id => `\`${id}\``).join(', ')}.`,
+            `**DomPruner**: No sections found for IDs: ${ids.map(id => `\`${id}\``).join(', ')}.`,
             `The page may have changed or the IDs may be incorrect.`,
             `Tip: re-run \`dompruner_fetch\` to get fresh section IDs.`,
           ].join(' '),

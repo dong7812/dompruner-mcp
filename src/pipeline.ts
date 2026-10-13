@@ -317,8 +317,9 @@ export async function getSections(
     return result;
   });
 
-  // SSG 경로는 DOM 섹션 그룹화 미지원
-  if (fetched.renderType === 'SSG') return [];
+  if (fetched.renderType === 'SSG') {
+    throw new Error('SSG_NOT_SUPPORTED: this page uses SSG rendering; DOM section grouping is unavailable');
+  }
 
   const doc = parseHtml(fetched.html);
   const rawNodes = extractContent(doc);
