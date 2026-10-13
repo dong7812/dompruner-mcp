@@ -114,6 +114,56 @@ The 2 %p drop from tuning (98%) to validation (96%) confirms the result is not o
 
 ---
 
+## 5. vs Crawl4AI
+
+Crawl4AI (v0.9.4) was installed and measured directly on the same 10 pages used in the BM25 section accuracy test above.
+
+**Method:**
+- **Crawl4AI default** — `AsyncWebCrawler().arun(url)`, `raw_markdown` output; no content filter
+- **Crawl4AI filtered** — `PruningContentFilter(threshold=0.5)` + `DefaultMarkdownGenerator`; `fit_markdown` output; their recommended general-purpose filter
+- **DomPruner** — `dompruner_fetch(url, query)` with the same queries as Section 4; BM25 section filtering enabled
+
+**Accuracy metric** (same as Section 4): what % of `answerTerms` (co-located facts in the correct section) appear in the output.
+
+### Token counts
+
+| Page | Crawl4AI default | Crawl4AI (PruningFilter) | **DomPruner** |
+|------|:---:|:---:|:---:|
+| MDN Fetch API | 5,075 | 1,634 | **713** |
+| Python os module | 89,957 | 83,786 | **1,758** |
+| Python builtins | 34,144 | 29,344 | **755** |
+| MDN Array | 18,987 | 12,350 | **1,207** |
+| Python control flow | 13,865 | 11,671 | **1,362** |
+| MDN Flexbox | 47,258 | 6,134 | **1,797** |
+| Python json module | 11,867 | 9,626 | **1,998** |
+| MDN WebSocket | 5,163 | 1,375 | **704** |
+| Python re module | 25,382 | 21,531 | **1,837** |
+| MDN Promise | 11,068 | 6,064 | **1,767** |
+| **Total** | **262,766** | **183,515** | **13,898** |
+| **vs DomPruner** | 18.9× | 13.2× | **—** |
+
+### Section accuracy (answerTerms preservation)
+
+| Page | Crawl4AI (PruningFilter) | **DomPruner** |
+|------|:---:|:---:|
+| MDN Fetch API | 20% ✗ | **100% ✓** |
+| Python os module | 100% ✓ | **100% ✓** |
+| Python builtins | 100% ✓ | **100% ✓** |
+| MDN Array | 100% ✓ | **100% ✓** |
+| Python control flow | 100% ✓ | **100% ✓** |
+| MDN Flexbox | 100% ✓ | **100% ✓** |
+| Python json module | 100% ✓ | **100% ✓** |
+| MDN WebSocket | 80% ✓ | **100% ✓** |
+| Python re module | 100% ✓ | **100% ✓** |
+| MDN Promise | 100% ✓ | 80% ✓ |
+| **Avg** | **90%** | **98%** |
+
+**DomPruner is 13.2× smaller and 8 percentage points more accurate than Crawl4AI's best filtering.**
+
+Crawl4AI's `PruningContentFilter` removes blocks below a text-density threshold. Short but information-dense sections (e.g., MDN Fetch API's CORS/credentials block) fall below that threshold and are discarded. DomPruner's DOM-level extraction preserves structure before any filtering; BM25 then ranks sections by query relevance rather than density.
+
+---
+
 ## Research Backing
 
 **Web page context is too large for LLM agents**

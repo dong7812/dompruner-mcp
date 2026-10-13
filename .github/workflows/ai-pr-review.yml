@@ -93,7 +93,7 @@ jobs:
           }
 
           api_key = os.environ['GEMINI_API_KEY']
-          models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.0-flash-exp']
+          models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']
 
           import time
           data = None
@@ -114,6 +114,7 @@ jobs:
                 body = e.read().decode()
                 code = e.code
                 print(f'{model} attempt {attempt+1} failed ({code}): {body[:200]}', file=sys.stderr)
+                # 503 만 재시도; 404/400 등은 다음 모델로 즉시 이동
                 if code == 503 and attempt < 2:
                   wait = 15 * (attempt + 1)
                   print(f'  Retrying in {wait}s...', file=sys.stderr)
@@ -127,25 +128,36 @@ jobs:
               break
 
           if data is None:
-            print('All models failed.', file=sys.stderr)
-            sys.exit(1)
+            # 모든 모델 실패 — sys.exit(1) 대신 기본 리뷰 작성, 워크플로우 계속
+            default_review = (
+              '## 요약\n'
+              'Gemini 모델에 접근할 수 없어 자동 리뷰를 생성하지 못했습니다.\n\n'
+              '## 이슈\n'
+              '- 🔴 자동 리뷰 불가: 모델 호출 실패 (서비스 불가 또는 모델 없음)\n\n'
+              '## 판정\n'
+              'REQUEST_CHANGES\n'
+            )
+            open('/tmp/review.txt', 'w').write(default_review)
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('verdict=REQUEST_CHANGES\n')
+            print('All models failed — wrote default review, verdict=REQUEST_CHANGES', file=sys.stderr)
+          else:
+            review = data['candidates'][0]['content']['parts'][0]['text']
+            open('/tmp/review.txt', 'w').write(review)
 
-          review = data['candidates'][0]['content']['parts'][0]['text']
-          open('/tmp/review.txt', 'w').write(review)
+            verdict = 'REQUEST_CHANGES'
+            for line in reversed(review.splitlines()):
+              line = line.strip()
+              if line == 'APPROVE':
+                verdict = 'APPROVE'
+                break
+              if line == 'REQUEST_CHANGES':
+                break
 
-          verdict = 'REQUEST_CHANGES'
-          for line in reversed(review.splitlines()):
-            line = line.strip()
-            if line == 'APPROVE':
-              verdict = 'APPROVE'
-              break
-            if line == 'REQUEST_CHANGES':
-              break
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'verdict={verdict}\n')
 
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-            f.write(f'verdict={verdict}\n')
-
-          print(f'Verdict: {verdict}')
+            print(f'Verdict: {verdict}')
           PYEOF
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
