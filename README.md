@@ -6,7 +6,7 @@
 
 > DOM AST middleware for LLM web pipelines — strips layout noise (nav, scripts, sidebars) and passes original text directly. Add a query to filter to relevant sections with BM25.
 
-When an LLM uses the built-in WebFetch, a smaller model pre-processes the HTML and hands back a summarized result — adding latency, cost, and interpretation you didn't ask for. DomPruner skips that entirely: DOM AST parsing strips noise and passes the **original content directly to the model**.
+When an LLM uses a web fetch tool, the raw page HTML is converted to text and passed into the model's context — often tens of thousands of tokens of navigation, sidebars, and boilerplate the model doesn't need. DomPruner strips that at the DOM level and passes only the **original content directly to the model**.
 
 | Call | Behavior |
 |---|---|
@@ -148,12 +148,14 @@ When retrieving a URL, always use dompruner_fetch instead of WebFetch.
 
 ### vs WebFetch (live comparison, Claude Haiku)
 
-| Metric | WebFetch | **DomPruner** |
+Measured using Anthropic's `web_fetch_20260209` server tool — the tool fetches the URL, converts HTML to markdown, and passes the full content into the model's context. `input_tokens` from the Claude API response captures the actual page tokens, with both paths run under identical conditions (same model, same system prompt, same tool definitions).
+
+| Metric | `web_fetch` tool | **DomPruner** |
 |---|:---:|:---:|
 | Avg context tokens | ~15,735 | **~1,019 (93.5% less)** |
 | Answer quality (10 queries) | 9 / 10 | **8 / 10** |
 | Avg response time | 5,811 ms | **3,168 ms (45% faster)** |
-| Content fidelity | Summarized by small model | **Original text preserved** |
+| Content fidelity | Raw page content (full HTML → text) | **DOM-extracted original text** |
 | Extra API key / infra | No | **No** |
 
 ### BM25 Section Accuracy (snapshot-based, deterministic)
@@ -182,14 +184,30 @@ Crawl4AI is a crawler framework — browser automation, JS rendering, click/scro
 | Install | `pip install crawl4ai && crawl4ai-setup` (Chromium ~300 MB) | **`npx -y dompruner-mcp`** |
 | Browser required | Default install includes Chromium; HTTP-only mode available | **No** (SSR; Playwright only on CSR detection) |
 | MCP server | Requires running the Crawl4AI Docker server | **`npx -y dompruner-mcp` — no server** |
-| Config to filter tokens | Manual content filter setup | **Zero — just pass `query=`** |
+| Config to filter tokens | Pass a filter object in code (`BM25ContentFilter(user_query=...)`) | **Zero — just pass `query=`** |
 
-### Token count: same 10 pages, measured today
+### Held-out validation: 5 sites not in DomPruner's tuning set
 
-Three Crawl4AI modes are compared:
+The most defensible comparison: five sites that were **not** used to tune DomPruner's parameters (react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org). Both tools use the same query.
+
+| Page | C4AI BM25ContentFilter | **DomPruner** |
+|------|:---:|:---:|
+| React useEffect | 4,275 | **1,257** |
+| TypeScript narrowing | 2,782 | **1,214** |
+| Express routing | 1,938 | **1,799** |
+| Rust ownership | 1,832 | **718** |
+| Next.js layouts | 1,505 | **1,379** |
+| **Total** | **12,332** | **6,367** |
+| **Accuracy** | **96%** | **96%** |
+
+**On sites DomPruner was not tuned on: 1.9× fewer tokens with the same accuracy (96%).**
+
+### Tuning set: 10 pages (MDN, docs.python.org)
+
+Three Crawl4AI modes against DomPruner for reference:
 - **Default** — raw markdown (no filtering)
 - **PruningContentFilter** — text-density heuristic filter (their general-purpose option)
-- **BM25ContentFilter(user_query=...)** — their query-based filter using the **same query as DomPruner** (direct apples-to-apples)
+- **BM25ContentFilter(user_query=...)** — their query-based filter using the same query as DomPruner
 
 | Page | C4AI default | C4AI Pruning | C4AI BM25 | **DomPruner** |
 |------|:---:|:---:|:---:|:---:|
@@ -206,9 +224,7 @@ Three Crawl4AI modes are compared:
 | **Total** | **262,766** | **183,515** | **18,647** | **13,898** |
 | **vs DomPruner** | 18.9× more | 13.2× more | 1.3× more | **—** |
 
-### Accuracy: does the right content survive?
-
-We measured whether key facts (`answerTerms`) appear in each tool's output — the same metric as DomPruner's BM25 section accuracy test.
+#### Accuracy on tuning set
 
 | Page | C4AI Pruning | C4AI BM25 | **DomPruner** |
 |------|:---:|:---:|:---:|
@@ -224,25 +240,9 @@ We measured whether key facts (`answerTerms`) appear in each tool's output — t
 | MDN Promise | 100% ✓ | 100% ✓ | 80% ✓ |
 | **Avg** | **90%** | **36%** | **98%** |
 
-Crawl4AI's `BM25ContentFilter` over-aggressively prunes technical documentation: for Python docs pages it returns as few as 16 tokens — effectively empty — while missing all answer terms. DomPruner's DOM-level extraction preserves document structure before BM25 scoring, preventing this.
+**Why BM25ContentFilter returns near-empty on 5 of 10 pages:** `BM25ContentFilter` operates on block-level chunks from Crawl4AI's HTML-to-markdown converter. Python docs and MDN API reference pages use `<dl>/<dt>/<dd>` definition-list structure — each function or property is isolated in its own tiny block. A threshold sweep from 0.0 to 0.10 shows a cliff at threshold=0.01: below it, the full page is returned (17,000–77,000 tokens, 100% accuracy); above it, near-empty output (16–741 tokens, 0% accuracy). There is no intermediate threshold that gives both accurate and compact output on these pages. Setting threshold=0.0 recovers accuracy but disables filtering entirely. Prose-heavy pages (React, TypeScript, Rust — as shown in the validation set above) have larger mixed-content sections where `BM25ContentFilter` works correctly at 96% accuracy.
 
-Crawl4AI's `PruningContentFilter` (text-density heuristics) drops content-rich but short sections — e.g., the MDN Fetch API CORS/credentials section. DomPruner is **13.2× smaller** and **8 pp more accurate** than PruningContentFilter.
-
-### Held-out validation: 5 sites not in DomPruner's tuning set
-
-To confirm these results aren't specific to DomPruner's own tuning pages, we ran the same BM25ContentFilter comparison on five held-out sites: react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org.
-
-| Page | C4AI BM25 | **DomPruner** |
-|------|:---:|:---:|
-| React useEffect | 4,275 | **1,257** |
-| TypeScript narrowing | 2,782 | **1,214** |
-| Express routing | 1,938 | **1,799** |
-| Rust ownership | 1,832 | **718** |
-| Next.js layouts | 1,505 | **1,379** |
-| **Total** | **12,332** | **6,367** |
-| **Accuracy** | **96%** | **96%** |
-
-On held-out sites: DomPruner uses **1.9× fewer tokens** with the **same accuracy** as Crawl4AI BM25ContentFilter.
+**Why PruningContentFilter drops the MDN Fetch API CORS section:** text-density heuristics discard content-rich but short sections. DomPruner is **13.2× smaller** and **8 pp more accurate** than PruningContentFilter.
 
 ---
 

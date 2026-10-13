@@ -6,7 +6,7 @@ English | [한국어](./README.ko.md)
 
 > LLM 웹 파이프라인을 위한 DOM AST 미들웨어 — 레이아웃 노이즈(nav·스크립트·사이드바)를 제거하고 원문을 그대로 전달합니다. query를 넘기면 BM25로 관련 섹션만 추가 필터링합니다.
 
-LLM이 내장 WebFetch를 사용하면 소형 모델이 HTML을 전처리해 요약된 결과를 반환합니다 — 지연, 비용, 원하지 않은 해석이 추가됩니다. DomPruner는 이 단계를 건너뜁니다: DOM AST 파싱으로 노이즈를 제거하고 **원문 콘텐츠를 모델에 직접 전달**합니다.
+LLM이 웹 fetch 툴을 사용하면 원시 HTML이 텍스트로 변환되어 모델 컨텍스트에 그대로 들어옵니다 — navigation·사이드바·보일러플레이트를 포함한 수만 토큰이 불필요하게 쌓입니다. DomPruner는 DOM 수준에서 이를 제거하고 **원문 콘텐츠만 모델에 직접 전달**합니다.
 
 | 호출 | 동작 |
 |---|---|
@@ -148,12 +148,14 @@ URL을 가져올 때 WebFetch 대신 항상 dompruner_fetch를 사용하세요.
 
 ### WebFetch 비교 (라이브 측정, Claude Haiku)
 
-| 지표 | WebFetch | **DomPruner** |
+Anthropic의 `web_fetch_20260209` 서버 툴로 측정 — URL을 fetch해 HTML을 마크다운으로 변환 후 모델 컨텍스트에 전달. `input_tokens`는 실제 페이지 토큰을 측정하며, 두 경로 모두 동일 모델·시스템 프롬프트·툴 정의로 실행.
+
+| 지표 | `web_fetch` 툴 | **DomPruner** |
 |---|:---:|:---:|
 | 평균 컨텍스트 토큰 | ~15,735 | **~1,019 (93.5% 절감)** |
 | 답변 품질 (10개 쿼리) | 9 / 10 | **8 / 10** |
 | 평균 응답 시간 | 5,811 ms | **3,168 ms (45% 빠름)** |
-| 콘텐츠 충실도 | 소형 모델 요약 | **원문 그대로 보존** |
+| 콘텐츠 충실도 | 원시 페이지 콘텐츠 (HTML → 텍스트 변환) | **DOM 추출 원문** |
 | 추가 API 키 / 인프라 | 없음 | **없음** |
 
 ### BM25 섹션 선택 정확도 (스냅샷 기반 결정적 측정)
@@ -166,6 +168,76 @@ URL을 가져올 때 WebFetch 대신 항상 dompruner_fetch를 사용하세요.
 headingBoost=2.0은 튜닝셋에서 파라미터 스윕(1.0–3.0)으로 선정됐습니다. 검증셋은 튜닝에 쓰이지 않은 5개 사이트(react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org)로 구성해 과적합 여부를 확인했습니다. 2%p 차이는 알려진 heading-bias 한계 범위 내에 있습니다.
 
 → **[전체 벤치마크](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)** · **[아키텍처](https://github.com/dong7812/dompruner-mcp/blob/main/docs/architecture.md)**
+
+---
+
+## Crawl4AI 비교
+
+Crawl4AI는 크롤러 프레임워크 — 브라우저 자동화, JS 렌더링, 클릭·스크롤 인터랙션, JSON 추출, 심층 크롤. DomPruner는 LLM 컨텍스트 미들웨어 — 에이전트가 URL을 이미 알고 있을 때 토큰 비용을 줄이는 단일 목적 레이어입니다.
+
+**해결하는 문제가 다릅니다.** 하지만 MCP 에이전트 안에서 웹 페이지를 읽는 용도로 둘 다 쓸 수 있으므로 비교는 유의미합니다.
+
+### 설치
+
+| | Crawl4AI | **DomPruner** |
+|---|:---:|:---:|
+| 설치 | `pip install crawl4ai && crawl4ai-setup` (Chromium ~300 MB) | **`npx -y dompruner-mcp`** |
+| 브라우저 필요 여부 | 기본 설치에 Chromium 포함 (HTTP 전용 모드 있음) | **없음** (SSR; CSR 감지 시 Playwright만 사용) |
+| MCP 서버 | Crawl4AI Docker 서버 실행 필요 | **`npx -y dompruner-mcp` — 별도 서버 없음** |
+| 토큰 필터 설정 | 코드에서 필터 객체 생성 (`BM25ContentFilter(user_query=...)`) | **불필요 — `query=`만 넘기면 됨** |
+
+### 검증셋: DomPruner 튜닝에 쓰지 않은 5개 사이트
+
+가장 방어하기 쉬운 비교: DomPruner 파라미터 튜닝에 사용하지 않은 사이트 5개(react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org). 두 툴 모두 동일 쿼리 사용.
+
+| 페이지 | C4AI BM25ContentFilter | **DomPruner** |
+|------|:---:|:---:|
+| React useEffect | 4,275 | **1,257** |
+| TypeScript narrowing | 2,782 | **1,214** |
+| Express routing | 1,938 | **1,799** |
+| Rust ownership | 1,832 | **718** |
+| Next.js layouts | 1,505 | **1,379** |
+| **합계** | **12,332** | **6,367** |
+| **정확도** | **96%** | **96%** |
+
+**DomPruner가 튜닝하지 않은 사이트에서도 1.9배 적은 토큰으로 동일 정확도(96%).**
+
+### 튜닝셋: 10개 페이지 (MDN, docs.python.org) — 참고용
+
+| 페이지 | C4AI 기본 | C4AI Pruning | C4AI BM25 | **DomPruner** |
+|------|:---:|:---:|:---:|:---:|
+| MDN Fetch API | 5,075 | 1,634 | 746 | **713** |
+| Python os module | 89,957 | 83,786 | 31 | **1,758** |
+| Python builtins | 34,144 | 29,344 | 741 | **755** |
+| MDN Array | 18,987 | 12,350 | 85 | **1,207** |
+| Python control flow | 13,865 | 11,671 | 461 | **1,362** |
+| MDN Flexbox | 47,258 | 6,134 | 3,015 | **1,797** |
+| Python json module | 11,867 | 9,626 | 16 | **1,998** |
+| MDN WebSocket | 5,163 | 1,375 | 282 | **704** |
+| Python re module | 25,382 | 21,531 | 9,777 | **1,837** |
+| MDN Promise | 11,068 | 6,064 | 3,493 | **1,767** |
+| **합계** | **262,766** | **183,515** | **18,647** | **13,898** |
+| **DomPruner 대비** | 18.9배 | 13.2배 | 1.3배 | **—** |
+
+#### 튜닝셋 정확도
+
+| 페이지 | C4AI Pruning | C4AI BM25 | **DomPruner** |
+|------|:---:|:---:|:---:|
+| MDN Fetch API | 20% ✗ | 20% ✗ | **100% ✓** |
+| Python os module | 100% ✓ | 0% ✗ | **100% ✓** |
+| Python builtins | 100% ✓ | 0% ✗ | **100% ✓** |
+| MDN Array | 100% ✓ | 0% ✗ | **100% ✓** |
+| Python control flow | 100% ✓ | 60% ✓ | **100% ✓** |
+| MDN Flexbox | 100% ✓ | 100% ✓ | **100% ✓** |
+| Python json module | 100% ✓ | 0% ✗ | **100% ✓** |
+| MDN WebSocket | 80% ✓ | 0% ✗ | **100% ✓** |
+| Python re module | 100% ✓ | 80% ✓ | **100% ✓** |
+| MDN Promise | 100% ✓ | 100% ✓ | 80% ✓ |
+| **평균** | **90%** | **36%** | **98%** |
+
+**BM25ContentFilter가 10개 중 5개에서 거의 빈 결과를 낸 이유:** `BM25ContentFilter`는 Crawl4AI HTML→마크다운 변환기의 블록 단위 청크에 BM25를 적용합니다. Python 문서와 MDN API 레퍼런스 페이지는 `<dl>/<dt>/<dd>` 정의 목록 구조로 함수나 속성마다 독립된 작은 블록으로 분리됩니다. threshold를 0.0~0.10 구간에서 스윕한 결과, **0.01에서 절벽**이 나타납니다 — 0.0은 전체 페이지(17,000~77,000 토큰, 100% 정확도), 0.01 이상은 거의 빈 결과(16~741 토큰, 0% 정확도). 이 구간에서 정확도와 압축을 동시에 만족하는 임계값은 존재하지 않습니다. 산문형 페이지(React, TypeScript, Rust)에서는 동일 필터가 96% 정확도로 정상 동작합니다.
+
+**PruningContentFilter가 MDN Fetch API의 CORS 섹션을 버리는 이유:** 텍스트 밀도 휴리스틱이 콘텐츠가 풍부하지만 짧은 섹션을 제거합니다. DomPruner는 PruningContentFilter 대비 **13.2배 작고 8%p 더 정확**합니다.
 
 ---
 

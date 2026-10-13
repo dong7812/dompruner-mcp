@@ -114,6 +114,84 @@ The 2 %p drop from tuning (98%) to validation (96%) confirms the result is not o
 
 ---
 
+## 5. vs Crawl4AI
+
+### Methodology
+
+- **Crawl4AI version:** 0.9.4
+- **DomPruner:** `runPipeline(url, { query })` — same query as each Crawl4AI run
+- **Token counting:** `tiktoken cl100k_base` (Crawl4AI); `refinedTokens` from pipeline (DomPruner)
+- **Accuracy metric:** `answerTerms` presence in output (same terms as Section 4 above); terms chosen to not overlap with the query
+- **Three Crawl4AI modes measured:**
+  - **Default** — `raw_markdown` (no filtering)
+  - **PruningContentFilter** — `fit_markdown` with `PruningContentFilter(threshold=0.5)`
+  - **BM25ContentFilter** — `fit_markdown` with `BM25ContentFilter(user_query=<same query>, bm25_threshold=0.1)`
+
+### Tuning set token counts (10 pages)
+
+| Page | Query | C4AI default | C4AI Pruning | C4AI BM25 | DomPruner |
+|------|-------|:---:|:---:|:---:|:---:|
+| MDN Fetch API | making a fetch request | 5,075 | 1,634 | 746 | 713 |
+| Python os module | getcwd listdir | 89,957 | 83,786 | 31 | 1,758 |
+| Python builtins | enumerate map filter | 34,144 | 29,344 | 741 | 755 |
+| MDN Array | map filter reduce | 18,987 | 12,350 | 85 | 1,207 |
+| Python control flow | for loop | 13,865 | 11,671 | 461 | 1,362 |
+| MDN Flexbox | flex direction axis | 47,258 | 6,134 | 3,015 | 1,797 |
+| Python json module | dumps loads | 11,867 | 9,626 | 16 | 1,998 |
+| MDN WebSocket | websocket events | 5,163 | 1,375 | 282 | 704 |
+| Python re module | match search pattern | 25,382 | 21,531 | 9,777 | 1,837 |
+| MDN Promise | promise chaining | 11,068 | 6,064 | 3,493 | 1,767 |
+| **Total** | | **262,766** | **183,515** | **18,647** | **13,898** |
+
+### Tuning set accuracy
+
+| Page | C4AI Pruning | C4AI BM25 | DomPruner |
+|------|:---:|:---:|:---:|
+| MDN Fetch API | 20% | 20% | 100% |
+| Python os module | 100% | 0% | 100% |
+| Python builtins | 100% | 0% | 100% |
+| MDN Array | 100% | 0% | 100% |
+| Python control flow | 100% | 60% | 100% |
+| MDN Flexbox | 100% | 100% | 100% |
+| Python json module | 100% | 0% | 100% |
+| MDN WebSocket | 80% | 0% | 100% |
+| Python re module | 100% | 80% | 100% |
+| MDN Promise | 100% | 100% | 80% |
+| **Avg** | **90%** | **36%** | **98%** |
+
+### Validation set (5 held-out pages)
+
+Sites not in DomPruner's tuning set: react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org. Only BM25ContentFilter (same-query comparison) measured.
+
+| Page | Query | C4AI BM25 tokens | C4AI BM25 acc | DomPruner tokens | DomPruner acc |
+|------|-------|:---:|:---:|:---:|:---:|
+| React useEffect | cleanup side effect | 4,275 | 100% | 1,257 | 100% |
+| TypeScript narrowing | type narrowing typeof | 2,782 | 80% | 1,214 | 100% |
+| Express routing | route handler middleware | 1,938 | 100% | 1,799 | 80% |
+| Rust ownership | ownership borrow move | 1,832 | 100% | 718 | 100% |
+| Next.js layouts | layout page routing | 1,505 | 100% | 1,379 | 100% |
+| **Total** | | **12,332** | **96%** | **6,367** | **96%** |
+
+### BM25ContentFilter threshold sweep (definition-list structured pages)
+
+For pages using `<dl>/<dt>/<dd>` structure (Python docs, MDN API reference), a sweep from threshold=0.0 to 0.10 reveals a binary cliff with no intermediate optimum:
+
+| Page | th=0.0 (tok) | th=0.0 (acc) | th=0.01 (tok) | th=0.01 (acc) | th=0.05 (tok) | th=0.05 (acc) |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|
+| Python os module | 76,893 | 100% | 31 | 0% | 31 | 0% |
+| Python builtins | 32,100 | 100% | 741 | 0% | 741 | 0% |
+| MDN Array | 17,621 | 100% | 85 | 0% | 85 | 0% |
+| Python json module | 10,118 | 100% | 16 | 0% | 16 | 0% |
+| MDN WebSocket | 4,395 | 100% | 282 | 0% | 282 | 0% |
+
+Intermediate values (0.01, 0.02, 0.03, 0.04) all produce the same near-empty output as 0.05. There is no threshold that yields both accurate and compact output on these pages.
+
+**Root cause:** `BM25ContentFilter` scores individual HTML-to-markdown blocks. On definition-list pages, each function/property is a separate tiny block. Query terms ("getcwd", "listdir") appear in at most one block each, giving all blocks a near-zero BM25 score against a multi-term query. Any non-zero threshold drops every block. Setting threshold=0.0 disables filtering and returns the full page.
+
+**Why validation set pages work at threshold=0.05:** React, TypeScript, and Rust documentation uses prose paragraphs with `<h2>/<h3>/<p>` structure — each block is a multi-sentence paragraph covering several concepts, giving higher per-block BM25 scores.
+
+---
+
 ## Research Backing
 
 **Web page context is too large for LLM agents**
