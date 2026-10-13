@@ -100,9 +100,9 @@ function filterSsgByQuery(markdown: string, query: string, budget = 1_200): stri
 //   per-URL semaphore(limit=1)로 직렬화 — 첫 번째 완료 후 대기자는 L2 hit.
 //   실패 시 semaphore 해제 → 다음 대기자가 독립 재시도 (Promise 공유와의 차이).
 
-const L1_TTL_MS = 5 * 60 * 1_000;
+const L1_TTL_MS = 2 * 60 * 1_000;  // L1 ≤ L2: result depends on fetch
 const L1_MAX    = 256;
-const L2_TTL_MS = 2 * 60 * 1_000;
+const L2_TTL_MS = 5 * 60 * 1_000;
 const L2_MAX    = 64;
 
 type L1Entry = { result: PipelineResult; expiresAt: number };
