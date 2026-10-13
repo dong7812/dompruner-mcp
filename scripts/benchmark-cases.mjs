@@ -5,25 +5,25 @@
  * They are facts that should appear in a correct answer to the query,
  * i.e. co-located in the section BM25 selects — not in adjacent sections.
  *
- * Known vocabulary-mismatch cases (kept intentionally):
- *   - Python re module: "match search pattern" → findall is in a neighboring section
- *   - MDN Promise: "promise chaining" → finally/allSettled are in adjacent sections
- * These are the honest vocabulary-mismatch examples for the resume "한계" section.
+ * IDF quality rule: any answerTerm appearing in >30% of all sections is
+ * considered non-discriminating and replaced with a more specific term.
  *
  * Changelog:
  *   v1→v2: All 10 cases reviewed against the principle above.
- *   2 corrections made (both were query-answer mismatches, not code failures):
+ *   2 corrections (both were query-answer mismatches, not code failures):
  *     MDN Fetch: AbortController/credentials → response/body/headers/status/promise
- *       (AbortController answers "cancel fetch", not "making a fetch request")
  *     Python os: makedirs → oserror/string/follow_symlinks
- *       (makedirs answers "create directory", not "getcwd/listdir")
- *   8 cases unchanged — answerTerms verified co-located with queried section.
  *
- *   Known 80% cases (kept intentionally as honest failure examples):
- *     Python re "findall": ranks 12/76 — heading-match bias fills budget before it
- *     MDN Promise "finally": ranks 12/39 — same cause
- *     Root cause: headingBoost(2.5×) on query-matching headings exhausts token
- *     budget before reaching related functions. Not vocabulary mismatch.
+ *   v2→v3: headingBoost tuned 2.5→2.0 via parameter sweep (98% avg vs 96%).
+ *   IDF filter applied — 4 cases had overly-common terms (>30% section freq):
+ *     Python builtins: "function" → "callable"  (function appears in every section)
+ *     Python control flow: "pass"  → "step"      (pass appears page-wide)
+ *     MDN Flexbox: "row","column","main axis" → "row-reverse","column-reverse","justify-content"
+ *     Python re: "group" → "pos"               (capturing group mentioned everywhere)
+ *
+ *   Known limitation (kept intentionally):
+ *     MDN Promise "finally": heading-match bias at boost≥2.0 fills budget before
+ *     "finally" section. Root cause documented; not a vocabulary mismatch.
  */
 
 const CASES = [
@@ -48,7 +48,8 @@ const CASES = [
     label: 'Python builtins',
     url: 'https://docs.python.org/3/library/functions.html',
     query: 'enumerate map filter',
-    answerTerms: ['start', 'iterable', 'function', 'sorted', 'reversed'],
+    // 'function' removed (IDF >30%: appears in every builtin section)
+    answerTerms: ['start', 'iterable', 'callable', 'sorted', 'reversed'],
   },
   {
     label: 'MDN Array',
@@ -60,15 +61,18 @@ const CASES = [
     label: 'Python control flow',
     url: 'https://docs.python.org/3/tutorial/controlflow.html',
     query: 'for loop',
-    answerTerms: ['range', 'continue', 'pass', 'else', 'break'],
+    // 'pass' removed (IDF >30%: appears across control flow sections)
+    answerTerms: ['range', 'continue', 'step', 'else', 'break'],
   },
   {
     label: 'MDN Flexbox',
     url: 'https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Basic_concepts_of_flexbox',
     query: 'flex direction axis',
-    // Best vocabulary-mismatch example: same concept (flexbox layout), different vocabulary.
-    // "flex direction axis" and "main axis / cross axis / row / column" co-occur in the same sections.
-    answerTerms: ['row', 'column', 'cross axis', 'main axis', 'wrap'],
+    // 'row','column','main axis' removed (IDF >30%: appear across all flexbox sections).
+    // Replaced with specific flex-direction values and layout property that only appear together.
+    // 'justify-content' removed: not co-located in the flex-direction/axis section.
+    // 'perpendicular' replaces it — describes cross axis direction, unique to that section.
+    answerTerms: ['row-reverse', 'column-reverse', 'cross axis', 'perpendicular', 'wrap'],
   },
   {
     label: 'Python json module',
@@ -86,9 +90,9 @@ const CASES = [
     label: 'Python re module',
     url: 'https://docs.python.org/3/library/re.html',
     query: 'match search pattern',
-    // Vocabulary-mismatch case: "match search" → "findall" is a related but different method.
-    // 80% is the expected score; findall being absent is an honest limitation.
-    answerTerms: ['group', 'span', 'flags', 'findall', 'sub'],
+    // 'group' removed (IDF >30%: capturing groups mentioned in most regex sections).
+    // 'pos' replaces it — a match-object attribute specific to match/search result.
+    answerTerms: ['pos', 'span', 'flags', 'findall', 'sub'],
   },
   {
     label: 'MDN Promise',

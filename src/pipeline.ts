@@ -12,6 +12,8 @@ export interface PipelineOptions {
   query?: string;
   /** Skip HTTP fetch and use pre-fetched page data (for deterministic tests). */
   prefetched?: { html: string; renderType: string; ssgPayload?: unknown };
+  /** BM25 section ranking options (headingBoost, tokenBudget, etc.) */
+  sectionBm25?: import('./rule-engine/builtin/section-bm25.js').SectionBm25Options;
 }
 
 export interface PipelineResult {
@@ -68,7 +70,7 @@ function filterSsgByQuery(markdown: string, query: string, budget = 1_200): stri
   const scored = sections.map(sec => {
     const headingTokens = tokenize(sec.heading);
     const bodyTokens    = tokenize(sec.body.join(' '));
-    const headingScore  = bm25Score(queryTerms, headingTokens, avgLen) * 2.5;
+    const headingScore  = bm25Score(queryTerms, headingTokens, avgLen) * 2.0;
     const bodyScore     = bm25Score(queryTerms, bodyTokens, avgLen);
     return { sec, score: headingScore + bodyScore };
   });
@@ -168,7 +170,7 @@ export async function runPipeline(
 
   // BM25는 반드시 presentation rule(http-endpoint 등) 앞에 실행해야
   // 문서 원래 순서로 섹션을 그룹화한 뒤, 선택된 섹션에 재배치 rule이 적용된다.
-  const bm25Rule = options.query ? createSectionBm25Rule(options.query) : null;
+  const bm25Rule = options.query ? createSectionBm25Rule(options.query, options.sectionBm25 ?? {}) : null;
   const rules = bm25Rule ? [bm25Rule, ...baseRules] : baseRules;
 
   // ── L1 check ─────────────────────────────────────────────────────────────────

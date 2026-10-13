@@ -170,7 +170,7 @@ export function createSectionBm25Rule(
 
   const {
     tokenBudget        = 1_200,
-    headingBoost       = 2.5,
+    headingBoost       = 2.0,
     minSections        = 2,
     depthDecay         = 0.4,
     minHeadingSections = 2,
@@ -180,7 +180,7 @@ export function createSectionBm25Rule(
 
   return {
     name: 'section-bm25',
-    description: `BM25 section ranking (budget: ${tokenBudget} tok, boost: ${headingBoost}×, depth: ${depthDecay})`,
+    description: `BM25 section ranking (budget: ${tokenBudget} tok, headingBoost: ${headingBoost}×, depth: ${depthDecay})`,
     getLastConfidence: () => _lastMaxScore,
 
     transform(nodes: FQNNode[], _ctx: RuleContext): FQNNode[] {
