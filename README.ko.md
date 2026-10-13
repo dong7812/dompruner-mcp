@@ -156,13 +156,14 @@ URL을 가져올 때 WebFetch 대신 항상 dompruner_fetch를 사용하세요.
 | 콘텐츠 충실도 | 소형 모델 요약 | **원문 그대로 보존** |
 | 추가 API 키 / 인프라 | 없음 | **없음** |
 
-### BM25 섹션 선택 정확도 (10개 쿼리, 스냅샷 기반 결정적 측정)
+### BM25 섹션 선택 정확도 (스냅샷 기반 결정적 측정)
 
-| 평균 토큰 절감율 | 섹션 보존율 | 100% 달성 페이지 |
-|:---:|:---:|:---:|
-| **98.0%** | **98.0%** | **9 / 10** |
+| 평가셋 | 페이지 수 | 평균 절감율 | 섹션 보존율 |
+|---|:---:|:---:|:---:|
+| 튜닝셋 (MDN, docs.python.org) | 10 | 98.0% | **98.0%** |
+| **검증셋 (미사용 사이트)** | 5 | 98.7% | **96.0%** |
 
-10개 쿼리 타입 중 9개는 정답 섹션을 100% 보존율로 선택. 나머지 1개(MDN Promise `finally`)는 heading-match bias 엣지 케이스로 어휘 불일치와 무관한 알려진 한계입니다.
+headingBoost=2.0은 튜닝셋에서 파라미터 스윕(1.0–3.0)으로 선정됐습니다. 검증셋은 튜닝에 쓰이지 않은 5개 사이트(react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org)로 구성해 과적합 여부를 확인했습니다. 2%p 차이는 알려진 heading-bias 한계 범위 내에 있습니다.
 
 → **[전체 벤치마크](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)** · **[아키텍처](https://github.com/dong7812/dompruner-mcp/blob/main/docs/architecture.md)**
 

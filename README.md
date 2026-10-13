@@ -156,13 +156,14 @@ When retrieving a URL, always use dompruner_fetch instead of WebFetch.
 | Content fidelity | Summarized by small model | **Original text preserved** |
 | Extra API key / infra | No | **No** |
 
-### BM25 Section Accuracy (10 query types, snapshot-based)
+### BM25 Section Accuracy (snapshot-based, deterministic)
 
-| Avg token reduction | Section preservation | Pages @ 100% |
-|:---:|:---:|:---:|
-| **98.0%** | **98.0%** | **9 / 10** |
+| Set | Pages | Avg reduction | Section preservation |
+|---|:---:|:---:|:---:|
+| Tuning (MDN, docs.python.org) | 10 | 98.0% | **98.0%** |
+| **Validation (held-out sites)** | 5 | 98.7% | **96.0%** |
 
-9/10 query types find the correct answer section at 100% term retention. The remaining 1/10 (MDN Promise `finally`) is a known heading-match bias edge case, not a vocabulary mismatch.
+headingBoost=2.0 was selected by running a parameter sweep (1.0–3.0) on the tuning set. The validation set uses five sites not present in the tuning set (react.dev, typescriptlang.org, expressjs.com, doc.rust-lang.org, nextjs.org) to confirm the result is not overfit. The 2 %p gap is within the known heading-bias limitation.
 
 → **[Full benchmark](https://github.com/dong7812/dompruner-mcp/blob/main/docs/benchmark.md)** · **[Architecture](https://github.com/dong7812/dompruner-mcp/blob/main/docs/architecture.md)**
 
