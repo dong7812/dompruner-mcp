@@ -132,7 +132,15 @@ function buildAncestorMap(sections: Section[]): Map<number, number[]> {
   return result;
 }
 
-function groupSections(nodes: FQNNode[]): Section[] {
+export function slugify(text: string): string {
+  return text.toLowerCase()
+    .replace(/[^\w\s-]/g, ' ')
+    .replace(/[\s_]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+export function groupSections(nodes: FQNNode[]): Section[] {
   const sections: Section[] = [];
   let current: Section = { heading: null, nodes: [], tokenCount: 0, anchorDepth: Infinity };
 
@@ -152,6 +160,12 @@ function groupSections(nodes: FQNNode[]): Section[] {
   return sections;
 }
 
+export interface SkippedSection {
+  id: string;
+  heading: string;
+  tokens: number;
+}
+
 export interface SectionBm25Rule extends AstRAGRule {
   /**
    * transform 실행 후 전체 섹션 중 최고 BM25 점수.
@@ -160,6 +174,8 @@ export interface SectionBm25Rule extends AstRAGRule {
    * > 0       = 일부 매칭 (절대값 — 문서 간 비교 불가)
    */
   getLastConfidence(): number | undefined;
+  /** 쿼리와 관련 있지만 token budget 초과로 선택되지 못한 섹션 목록 (score > 0, top 5) */
+  getSkippedSections(): SkippedSection[];
 }
 
 export function createSectionBm25Rule(
@@ -167,6 +183,7 @@ export function createSectionBm25Rule(
   options: SectionBm25Options = {},
 ): SectionBm25Rule {
   let _lastMaxScore: number | undefined = undefined;
+  let _skippedSections: SkippedSection[] = [];
 
   const {
     tokenBudget        = 1_200,
@@ -182,6 +199,7 @@ export function createSectionBm25Rule(
     name: 'section-bm25',
     description: `BM25 section ranking (budget: ${tokenBudget} tok, headingBoost: ${headingBoost}×, depth: ${depthDecay})`,
     getLastConfidence: () => _lastMaxScore,
+    getSkippedSections: () => _skippedSections,
 
     transform(nodes: FQNNode[], _ctx: RuleContext): FQNNode[] {
       if (!query.trim()) return nodes;
@@ -250,6 +268,17 @@ export function createSectionBm25Rule(
         usedTokens += section.tokenCount;
         if (usedTokens >= tokenBudget && selectedIndices.size >= minSections) break;
       }
+
+      // 쿼리 관련 있지만 budget 초과로 제외된 섹션 추적 (top 5 by score)
+      _skippedSections = scored
+        .filter(s => !selectedIndices.has(s.i) && s.score > 0 && s.section.heading !== null)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(s => ({
+          id: slugify(s.section.heading!.text),
+          heading: s.section.heading!.text,
+          tokens: s.section.tokenCount,
+        }));
 
       // 선택된 섹션의 조상 헤딩도 포함 (Ancestor Preservation)
       if (preserveStructure && selectedIndices.size > 0) {

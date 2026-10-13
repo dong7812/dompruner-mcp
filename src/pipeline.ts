@@ -5,7 +5,7 @@ import { extractAnchors, type SemanticAnchors } from './ast/anchor.js';
 import { extractSsgMarkdown } from './ast/ssg-extractor.js';
 import { serialize, estimateTokens } from './middleware/serializer.js';
 import { resolveRules, applyRules, type AstRAGRule } from './rule-engine/registry.js';
-import { createSectionBm25Rule, tokenize, bm25Score } from './rule-engine/builtin/section-bm25.js';
+import { createSectionBm25Rule, tokenize, bm25Score, groupSections, slugify } from './rule-engine/builtin/section-bm25.js';
 
 export interface PipelineOptions {
   rules?: (AstRAGRule | string)[];
@@ -36,6 +36,8 @@ export interface PipelineResult {
    * > 0       = 매칭됨
    */
   bm25Confidence?: number;
+  /** 쿼리 관련 있지만 token budget 초과로 선택되지 못한 섹션 목록 */
+  skippedSections?: import('./rule-engine/builtin/section-bm25.js').SkippedSection[];
 }
 
 // ── SSG 마크다운 BM25 섹션 필터 ──────────────────────────────────────────────
@@ -248,8 +250,9 @@ export async function runPipeline(
     const rawNodes = extractContent(doc);              // ← Layer 1→2→3
     const nodes  = applyRules(rawNodes, ctx, rules);   // ← Rule 체인 적용
 
-    // BM25 confidence 캡처 — transform 실행 후에 점수가 확정됨
+    // BM25 confidence + skipped sections 캡처 — transform 실행 후에 확정됨
     const bm25Confidence = bm25Rule?.getLastConfidence();
+    const skippedSections = bm25Rule?.getSkippedSections();
 
     // maxScore === 0: 쿼리 용어가 문서 어디에도 없음 → BM25 필터 없는 전체 DomPruner 출력
     // threshold 없음 — 0은 유일하게 임의성 없는 "완전 미스" 신호
@@ -285,6 +288,7 @@ export async function runPipeline(
       totalMs: performance.now() - t0,
       appliedRules: rules.map(r => r.name),
       bm25Confidence,
+      skippedSections: skippedSections?.length ? skippedSections : undefined,
     };
   }
 
@@ -292,4 +296,55 @@ export async function runPipeline(
   lruSet(l1Cache, l1Key, { result, expiresAt: Date.now() + L1_TTL_MS }, L1_MAX);
 
   return result;
+}
+
+/**
+ * dompruner_get_sections: 이전 dompruner_fetch에서 token budget 초과로 제외된 섹션을
+ * section ID로 직접 조회한다. L2 캐시가 살아 있으면 HTTP 재요청 없이 DOM만 재파싱.
+ */
+export async function getSections(
+  url: string,
+  sectionIds: string[],
+): Promise<{ id: string; heading: string; content: string; tokens: number }[]> {
+  if (!sectionIds.length) return [];
+  const requestedSet = new Set(sectionIds);
+
+  const fetched = await getFetchSem(url).run(async () => {
+    const l2Hit = l2Cache.get(url);
+    if (l2Hit && l2Hit.expiresAt > Date.now()) return l2Hit.fetched;
+    const result = await fetchPage(url);
+    lruSet(l2Cache, url, { fetched: result, expiresAt: Date.now() + L2_TTL_MS }, L2_MAX);
+    return result;
+  });
+
+  // SSG 경로는 DOM 섹션 그룹화 미지원
+  if (fetched.renderType === 'SSG') return [];
+
+  const doc = parseHtml(fetched.html);
+  const rawNodes = extractContent(doc);
+  const sections = groupSections(rawNodes);
+
+  const out: { id: string; heading: string; content: string; tokens: number }[] = [];
+
+  for (const section of sections) {
+    if (!section.heading) continue;
+    const id = slugify(section.heading.text);
+    if (!requestedSet.has(id)) continue;
+
+    const n = parseInt(section.heading.tag[1] ?? '', 10);
+    const level = isNaN(n) ? 3 : Math.max(1, Math.min(6, n));
+    const parts = [
+      '#'.repeat(level) + ' ' + section.heading.text,
+      ...section.nodes.map(node => node.text.trim()).filter(Boolean),
+    ];
+
+    out.push({
+      id,
+      heading: section.heading.text,
+      content: parts.join('\n\n'),
+      tokens: section.tokenCount,
+    });
+  }
+
+  return out;
 }
