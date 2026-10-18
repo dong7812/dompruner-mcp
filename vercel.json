@@ -9,6 +9,9 @@
   "functions": {
     "api/mcp.ts": {
       "maxDuration": 30
+    },
+    "api/refine.ts": {
+      "maxDuration": 30
     }
   }
 }
