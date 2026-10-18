@@ -24,6 +24,8 @@ interface RefineResponse {
   renderType: string;
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 function callDomPruner(
   endpoint: string,
   payload: RefineRequest,
@@ -37,6 +39,7 @@ function callDomPruner(
       port: parsed.port || (isHttps ? 443 : 80),
       path: parsed.pathname + parsed.search,
       method: 'POST',
+      timeout: REQUEST_TIMEOUT_MS,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
@@ -58,6 +61,9 @@ function callDomPruner(
       });
     });
 
+    req.on('timeout', () => {
+      req.destroy(new Error(`DomPruner request timed out after ${REQUEST_TIMEOUT_MS}ms`));
+    });
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -133,7 +139,16 @@ export class DomPruner implements INodeType {
       if (query)   payload.query = query;
       if (pageUrl) payload.url   = pageUrl;
 
-      const refined = await callDomPruner(endpoint, payload);
+      let refined: RefineResponse;
+      try {
+        refined = await callDomPruner(endpoint, payload);
+      } catch (err) {
+        throw new NodeOperationError(
+          this.getNode(),
+          err instanceof Error ? err : new Error(String(err)),
+          { itemIndex: i },
+        );
+      }
 
       results.push({
         json: {

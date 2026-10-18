@@ -6,6 +6,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Request body must be a JSON object' });
+  }
   const { html, query, url } = req.body as { html?: string; query?: string; url?: string };
 
   if (typeof html !== 'string' || html.length === 0) {

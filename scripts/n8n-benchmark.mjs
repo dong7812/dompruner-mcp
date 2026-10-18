@@ -46,17 +46,21 @@ function stripHtmlTags(html) {
     .trim();
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 function fetchUrl(url) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
-    mod.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; benchmark/1.0)' } }, (res) => {
+    const req = mod.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; benchmark/1.0)' }, timeout: REQUEST_TIMEOUT_MS }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return fetchUrl(res.headers.location).then(resolve).catch(reject);
       }
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    }).on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error(`fetch timed out: ${url}`)));
+    req.on('error', reject);
   });
 }
 
@@ -70,6 +74,7 @@ function callRefineEndpoint(endpoint, html, query, url) {
       port: parsed.port || (isHttps ? 443 : 80),
       path: parsed.pathname,
       method: 'POST',
+      timeout: REQUEST_TIMEOUT_MS,
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
     };
     const req = (isHttps ? https : http).request(options, (res) => {
@@ -83,6 +88,7 @@ function callRefineEndpoint(endpoint, html, query, url) {
         } catch (e) { reject(e); }
       });
     });
+    req.on('timeout', () => req.destroy(new Error('refine endpoint timed out')));
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -148,7 +154,6 @@ const avgRaw       = Math.round(rows.reduce((s, r) => s + r.raw, 0) / rows.lengt
 const avgHtmlNode  = Math.round(rows.reduce((s, r) => s + r.htmlNode, 0) / rows.length);
 const avgDomPruner = Math.round(rows.reduce((s, r) => s + r.dompruner, 0) / rows.length);
 const avgDpTokens  = Math.round(rows.reduce((s, r) => s + r.dpTokens, 0) / rows.length);
-const avgRawTokens = Math.round(rows.reduce((s, r) => s + estimateTokens(r.raw.toString()), 0) / rows.length);
 
 const rawTokensAvg      = Math.round(avgRaw / 4);
 const htmlNodeTokensAvg = Math.round(avgHtmlNode / 4);
